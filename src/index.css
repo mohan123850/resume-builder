@@ -1,5 +1,38 @@
 @import "tailwindcss";
 
+@theme {
+  --color-bg-gradient-start: #f8fafc;
+  --color-bg-gradient-end: #eef2f7;
+  --color-card-bg: white;
+  --color-text-primary: #1a1a1a;
+  --color-text-secondary: #8e8e8e;
+  --color-border: #e5e5e5;
+  --color-input-bg: #f5f5f4;
+}
+
+.dark {
+  --color-bg-gradient-start: #0f172a;
+  --color-bg-gradient-end: #1e293b;
+  --color-card-bg: #1e293b;
+  --color-text-primary: #f8fafc;
+  --color-text-secondary: #94a3b8;
+  --color-border: #334155;
+  --color-input-bg: #334155;
+}
+
+body {
+  background: linear-gradient(135deg, var(--color-bg-gradient-start), var(--color-bg-gradient-end));
+  color: var(--color-text-primary);
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+.card {
+  background: var(--color-card-bg);
+  border-radius: 16px;
+  border-color: var(--color-border);
+  transition: background 0.3s ease, border-color 0.3s ease;
+}
+
 /* Template 1 - Professional */
 .template1 {
   font-family: Arial, sans-serif !important;

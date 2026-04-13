@@ -36,7 +36,9 @@ import {
   Smartphone,
   Activity,
   Shield,
-  Search as SearchIcon
+  Search as SearchIcon,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -164,6 +166,7 @@ export default function App() {
   const [jobMatches, setJobMatches] = React.useState<JobMatch[]>([]);
   const [isMatching, setIsMatching] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<'edit' | 'preview' | 'jobs'>('edit');
+  const [isDarkMode, setIsDarkMode] = React.useState(false);
   const [previewData, setPreviewData] = React.useState<any>(null);
 
   // --- ATS Analyzer State ---
@@ -175,6 +178,12 @@ export default function App() {
   const [aiName, setAiName] = React.useState('');
   const [aiRole, setAiRole] = React.useState('');
   const [aiSkills, setAiSkills] = React.useState('');
+  const [aiEmail, setAiEmail] = React.useState('');
+  const [aiPhone, setAiPhone] = React.useState('');
+  const [aiLinkedin, setAiLinkedin] = React.useState('');
+  const [aiGithub, setAiGithub] = React.useState('');
+  const [aiPortfolio, setAiPortfolio] = React.useState('');
+  const [aiAdditionalInfo, setAiAdditionalInfo] = React.useState('');
   const [aiExperience, setAiExperience] = React.useState('');
   const [aiSummary, setAiSummary] = React.useState('');
   const [aiProjects, setAiProjects] = React.useState('');
@@ -374,7 +383,7 @@ export default function App() {
     setIsMatching(true);
     setActiveTab('jobs');
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
       const model = "gemini-3-flash-preview";
       
       const resumeContext = `
@@ -604,29 +613,40 @@ export default function App() {
 
     setIsGeneratingAI(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
       const prompt = `
-        You are a professional resume generator.
+        Act as a senior resume writer with 10+ years of experience.
+        Your task is to generate a clean, ATS-friendly, professional resume based on user input.
 
-        IMPORTANT RULES:
-        - If the input contains meaningless, random, or invalid text (like "asdf", "123", "tgfetrg"), DO NOT generate a resume.
-        - Instead, respond with: "Invalid input. Please provide meaningful details."
+        Rules:
+        - Keep formatting clean and structured
+        - Use bullet points for experience
+        - Expand skills into meaningful descriptions when helpful
+        - Use strong action verbs
+        - Keep it concise but impactful
+        - Tailor the resume to the given job role
+        - Do NOT include fake information
+        - If information is missing, intelligently infer but stay realistic
+        - Optimize for ATS systems, recruiter readability, impact, and clarity
+        - Quantify achievements where possible
+        - Make the candidate appear competitive but realistic
 
-        - Only generate a resume if:
-          - Name looks real
-          - Role is meaningful
-          - Skills contain real technologies
-
-        Generate a clean, professional resume for:
+        Generate a resume with the following details:
         Name: ${aiName}
-        Role: ${aiRole}
+        Job Role: ${aiRole}
         Skills: ${aiSkills}
+        Email: ${aiEmail}
+        Phone: ${aiPhone}
+        LinkedIn: ${aiLinkedin}
+        GitHub: ${aiGithub}
+        Portfolio: ${aiPortfolio}
+        Additional Info: ${aiAdditionalInfo}
 
         Please provide the content for the following sections:
-        1. Professional Summary (concise and impactful)
-        2. Experience (at least 3-4 professional bullet points using action verbs)
-        3. Projects (at least 2-3 professional bullet points)
-        4. Education (a standard degree for this role)
+        1. Professional Summary (2-3 lines tailored to the role)
+        2. Experience (Job-based bullet points generated from skills if no experience is provided)
+        3. Projects (short impactful descriptions)
+        4. Education (omit or keep minimal if not provided)
         5. Achievements (at least 2-3 professional bullet points)
 
         Format the experience, projects, and achievements as bullet points starting with "• ".
@@ -636,6 +656,10 @@ export default function App() {
         model: "gemini-3-flash-preview",
         contents: prompt,
         config: {
+          systemInstruction: "You are a professional resume writer and career coach.",
+          temperature: 0.7,
+          topP: 0.9,
+          topK: 40,
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -656,8 +680,19 @@ export default function App() {
 
       const resumeHtml = `
         <div class="space-y-4">
-          <h2 class="text-2xl font-bold uppercase tracking-tight">${aiName}</h2>
-          <h3 class="text-xl text-[#007BFF] font-medium">${aiRole}</h3>
+          <div class="flex justify-between items-start">
+            <div>
+              <h2 class="text-2xl font-bold uppercase tracking-tight">${aiName}</h2>
+              <h3 class="text-xl text-[#007BFF] font-medium">${aiRole}</h3>
+            </div>
+            <div class="text-[10px] text-right space-y-1 text-[#8E8E8E] font-mono uppercase tracking-widest">
+              ${aiEmail ? `<div>${aiEmail}</div>` : ''}
+              ${aiPhone ? `<div>${aiPhone}</div>` : ''}
+              ${aiLinkedin ? `<div>LinkedIn</div>` : ''}
+              ${aiGithub ? `<div>GitHub</div>` : ''}
+              ${aiPortfolio ? `<div>Portfolio</div>` : ''}
+            </div>
+          </div>
           <hr class="border-[#E5E5E5]">
           
           <div class="space-y-2">
@@ -750,7 +785,10 @@ export default function App() {
 
 
   return (
-    <div className="min-h-screen bg-[#F5F5F4] text-[#1A1A1A] font-sans selection:bg-[#1A1A1A] selection:text-white">
+    <div className={cn(
+      "min-h-screen text-[#1A1A1A] font-sans selection:bg-[#1A1A1A] selection:text-white transition-colors",
+      isDarkMode && "dark text-white selection:bg-white selection:text-black"
+    )}>
       {/* Confirmation Modal for Clear All */}
       <AnimatePresence>
         {isClearModalOpen && (
@@ -766,23 +804,23 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-md bg-white rounded-[40px] p-10 shadow-2xl overflow-hidden"
+              className="relative w-full max-w-md bg-white dark:bg-zinc-900 rounded-[40px] p-10 shadow-2xl overflow-hidden transition-colors"
             >
               <div className="absolute top-0 left-0 w-full h-2 bg-red-500" />
               <div className="flex flex-col items-center text-center space-y-6">
-                <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center text-red-500">
+                <div className="w-16 h-16 bg-red-50 dark:bg-red-500/10 rounded-full flex items-center justify-center text-red-500">
                   <AlertCircle size={32} />
                 </div>
                 <div className="space-y-2">
-                  <h3 className="text-2xl font-serif font-medium">Clear all data?</h3>
-                  <p className="text-[#8E8E8E] text-sm leading-relaxed">
+                  <h3 className="text-2xl font-serif font-medium dark:text-white">Clear all data?</h3>
+                  <p className="text-[#8E8E8E] dark:text-zinc-500 text-sm leading-relaxed">
                     This will permanently delete all your resume progress. This action cannot be undone.
                   </p>
                 </div>
                 <div className="flex gap-4 w-full pt-4">
                   <button
                     onClick={() => setIsClearModalOpen(false)}
-                    className="flex-1 py-4 bg-[#F5F5F4] text-[#1A1A1A] rounded-full font-bold uppercase text-[10px] tracking-widest hover:bg-[#E5E5E5] transition-all"
+                    className="flex-1 py-4 bg-[#F5F5F4] dark:bg-zinc-800 text-[#1A1A1A] dark:text-white rounded-full font-bold uppercase text-[10px] tracking-widest hover:bg-[#E5E5E5] dark:hover:bg-zinc-700 transition-all"
                   >
                     Cancel
                   </button>
@@ -803,8 +841,8 @@ export default function App() {
       </AnimatePresence>
 
       {/* Navigation Rail */}
-      <nav className="fixed left-0 top-0 h-full w-20 bg-white border-r border-[#E5E5E5] flex flex-col items-center py-8 gap-8 z-50">
-        <div className="w-10 h-10 bg-[#1A1A1A] rounded-full flex items-center justify-center text-white">
+      <nav className="fixed left-0 top-0 h-full w-20 bg-white dark:bg-zinc-900 border-r border-[#E5E5E5] dark:border-zinc-800 flex flex-col items-center py-8 gap-8 z-50 transition-colors">
+        <div className="w-10 h-10 bg-[#1A1A1A] dark:bg-white rounded-full flex items-center justify-center text-white dark:text-black transition-colors">
           <FileText size={20} />
         </div>
         <div className="flex flex-col gap-4">
@@ -818,24 +856,35 @@ export default function App() {
               onClick={() => setActiveTab(tab.id as any)}
               className={cn(
                 "p-3 rounded-xl transition-all group relative",
-                activeTab === tab.id ? "bg-zinc-100 text-zinc-900" : "hover:bg-zinc-50 text-zinc-400"
+                activeTab === tab.id 
+                  ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white" 
+                  : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50 text-zinc-400 dark:text-zinc-500"
               )}
             >
               <tab.icon size={20} />
-              <span className="absolute left-full ml-4 px-2 py-1 bg-[#1A1A1A] text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap uppercase tracking-widest">
+              <span className="absolute left-full ml-4 px-2 py-1 bg-[#1A1A1A] dark:bg-white text-white dark:text-black text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap uppercase tracking-widest">
                 {tab.label}
               </span>
             </button>
           ))}
         </div>
-        {isValidResume && (
-          <button 
-            onClick={exportToPDF}
-            className="mt-auto p-3 text-zinc-600 hover:bg-zinc-100 rounded-xl transition-all"
+
+        <div className="mt-auto flex flex-col gap-4">
+          <button
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            className="p-3 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-all"
           >
-            <Download size={20} />
+            {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
           </button>
-        )}
+          {isValidResume && (
+            <button 
+              onClick={exportToPDF}
+              className="p-3 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-all"
+            >
+              <Download size={20} />
+            </button>
+          )}
+        </div>
       </nav>
 
       <main className="pl-20 min-h-screen">
@@ -855,13 +904,13 @@ export default function App() {
                   
                   <header className="flex justify-between items-start">
                     <div>
-                      <h1 className="text-5xl font-serif font-light tracking-tight mb-2">Resume Builder</h1>
-                      <p className="text-[#8E8E8E] font-mono text-xs uppercase tracking-[0.3em]">Craft your professional narrative</p>
+                      <h1 className="text-5xl font-serif font-light tracking-tight mb-2 dark:text-white">Resume Builder</h1>
+                      <p className="text-[#8E8E8E] dark:text-zinc-500 font-mono text-xs uppercase tracking-[0.3em]">Craft your professional narrative</p>
                     </div>
                     <button
                       type="button"
                       onClick={() => setIsClearModalOpen(true)}
-                      className="flex items-center gap-2 px-4 py-2 text-red-500 hover:bg-red-50 rounded-xl transition-all text-[10px] font-bold uppercase tracking-widest border border-red-100"
+                      className="flex items-center gap-2 px-4 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-all text-[10px] font-bold uppercase tracking-widest border border-red-100 dark:border-red-500/20"
                     >
                       <Trash2 size={14} />
                       Clear All
@@ -870,51 +919,105 @@ export default function App() {
 
                 {/* AI Resume Generator Section */}
                 <section className="space-y-8">
-                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] pb-2">
-                    <Zap size={16} className="text-[#8E8E8E]" />
-                    <h2 className="text-xs font-bold uppercase tracking-widest">AI Resume Generator</h2>
+                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] dark:border-zinc-800 pb-2">
+                    <Zap size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
+                    <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">AI Resume Generator</h2>
                   </div>
                   
-                  <div className="bg-white p-8 rounded-[40px] border border-[#E5E5E5] space-y-8">
+                  <div className="card p-8 border border-[#E5E5E5] dark:border-zinc-800 space-y-8 transition-colors">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-4">
-                        <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Your Name</label>
+                        <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Your Name</label>
                         <input 
                           value={aiName}
                           onChange={(e) => setAiName(e.target.value)}
                           placeholder="Full Name"
                           className={cn(
-                            "w-full bg-[#F5F5F4] p-4 rounded-2xl border-b-2 outline-none transition-all text-sm",
+                            "w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 outline-none transition-all text-sm dark:text-white",
                             aiErrors.name ? "border-red-500" : "border-transparent focus:border-[#007BFF]"
                           )}
                         />
                         {aiErrors.name && <p className="text-red-500 text-[10px] font-bold uppercase tracking-widest mt-1">{aiErrors.name}</p>}
                       </div>
                       <div className="space-y-4">
-                        <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Job Role</label>
+                        <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Job Role</label>
                         <input 
                           value={aiRole}
                           onChange={(e) => setAiRole(e.target.value)}
                           placeholder="Example: Frontend Developer"
                           className={cn(
-                            "w-full bg-[#F5F5F4] p-4 rounded-2xl border-b-2 outline-none transition-all text-sm",
+                            "w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 outline-none transition-all text-sm dark:text-white",
                             aiErrors.role ? "border-red-500" : "border-transparent focus:border-[#007BFF]"
                           )}
                         />
                         {aiErrors.role && <p className="text-red-500 text-[10px] font-bold uppercase tracking-widest mt-1">{aiErrors.role}</p>}
                       </div>
                       <div className="space-y-4 md:col-span-2">
-                        <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Skills</label>
+                        <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Skills</label>
                         <textarea 
                           value={aiSkills}
                           onChange={(e) => setAiSkills(e.target.value)}
                           placeholder="HTML, CSS, JS, React..."
                           className={cn(
-                            "w-full h-32 bg-[#F5F5F4] p-4 rounded-2xl border-b-2 outline-none transition-all text-sm resize-none",
+                            "w-full h-24 bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 outline-none transition-all text-sm resize-none dark:text-white",
                             aiErrors.skills ? "border-red-500" : "border-transparent focus:border-[#007BFF]"
                           )}
                         />
                         {aiErrors.skills && <p className="text-red-500 text-[10px] font-bold uppercase tracking-widest mt-1">{aiErrors.skills}</p>}
+                      </div>
+                      <div className="space-y-4">
+                        <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Email</label>
+                        <input 
+                          value={aiEmail}
+                          onChange={(e) => setAiEmail(e.target.value)}
+                          placeholder="Email Address"
+                          className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 border-transparent focus:border-[#007BFF] outline-none transition-all text-sm dark:text-white"
+                        />
+                      </div>
+                      <div className="space-y-4">
+                        <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Phone</label>
+                        <input 
+                          value={aiPhone}
+                          onChange={(e) => setAiPhone(e.target.value)}
+                          placeholder="Phone Number"
+                          className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 border-transparent focus:border-[#007BFF] outline-none transition-all text-sm dark:text-white"
+                        />
+                      </div>
+                      <div className="space-y-4">
+                        <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">LinkedIn</label>
+                        <input 
+                          value={aiLinkedin}
+                          onChange={(e) => setAiLinkedin(e.target.value)}
+                          placeholder="LinkedIn URL"
+                          className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 border-transparent focus:border-[#007BFF] outline-none transition-all text-sm dark:text-white"
+                        />
+                      </div>
+                      <div className="space-y-4">
+                        <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">GitHub</label>
+                        <input 
+                          value={aiGithub}
+                          onChange={(e) => setAiGithub(e.target.value)}
+                          placeholder="GitHub URL"
+                          className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 border-transparent focus:border-[#007BFF] outline-none transition-all text-sm dark:text-white"
+                        />
+                      </div>
+                      <div className="space-y-4">
+                        <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Portfolio</label>
+                        <input 
+                          value={aiPortfolio}
+                          onChange={(e) => setAiPortfolio(e.target.value)}
+                          placeholder="Portfolio URL"
+                          className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 border-transparent focus:border-[#007BFF] outline-none transition-all text-sm dark:text-white"
+                        />
+                      </div>
+                      <div className="space-y-4 md:col-span-2">
+                        <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Additional Info / Experience Notes</label>
+                        <textarea 
+                          value={aiAdditionalInfo}
+                          onChange={(e) => setAiAdditionalInfo(e.target.value)}
+                          placeholder="Any specific experience or notes you want to include..."
+                          className="w-full h-32 bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 border-transparent focus:border-[#007BFF] outline-none transition-all text-sm resize-none dark:text-white"
+                        />
                       </div>
                     </div>
 
@@ -944,7 +1047,7 @@ export default function App() {
                         <h3 className="text-[10px] font-mono uppercase tracking-widest opacity-40 mb-6">Generated Resume Preview</h3>
                         <div 
                           id="aiResumePreview"
-                          className="prose prose-sm max-w-none bg-white p-8 rounded-xl"
+                          className="prose prose-sm max-w-none card p-8"
                           dangerouslySetInnerHTML={{ __html: generatedAIResume }}
                         />
                         <div className="mt-8 flex flex-wrap gap-4">
@@ -955,6 +1058,11 @@ export default function App() {
                                 ...formData,
                                 fullName: aiName,
                                 role: aiRole,
+                                email: aiEmail || formData.email,
+                                phone: aiPhone || formData.phone,
+                                linkedin: aiLinkedin || formData.linkedin,
+                                github: aiGithub || formData.github,
+                                portfolio: aiPortfolio || formData.portfolio,
                                 summary: aiSummary || `Motivated ${aiRole} skilled in ${aiSkills}. Passionate about delivering high-quality solutions.`
                               });
                               
@@ -1033,86 +1141,86 @@ export default function App() {
 
                 {/* Personal Details */}
                 <section className="space-y-6">
-                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] pb-2">
-                    <User size={16} className="text-[#8E8E8E]" />
-                    <h2 className="text-xs font-bold uppercase tracking-widest">Personal Details</h2>
+                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] dark:border-zinc-800 pb-2">
+                    <User size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
+                    <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">Personal Details</h2>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-1">
-                        <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Full Name</label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="space-y-1">
+                        <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Full Name</label>
                         <input 
                           name="fullName"
                           value={formData.fullName}
                           onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
                           placeholder="Jane Doe"
                           autoComplete="off"
-                          className="w-full bg-transparent border-b-2 border-[#ccc] py-2 focus:border-[#007BFF] outline-none transition-colors text-lg"
+                          className="w-full bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-2 focus:border-[#007BFF] outline-none transition-colors text-lg dark:text-white"
                         />
                       </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Job Role</label>
+                      <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Job Role</label>
                       <input 
                         name="role"
                         value={formData.role}
                         onChange={handleInputChange}
                         placeholder="Frontend Developer"
                         autoComplete="off"
-                        className="w-full bg-transparent border-b-2 border-[#ccc] py-2 focus:border-[#007BFF] outline-none transition-colors text-lg"
+                        className="w-full bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-2 focus:border-[#007BFF] outline-none transition-colors text-lg dark:text-white"
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Email Address</label>
+                      <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Email Address</label>
                       <input 
                         name="email"
                         value={formData.email}
                         onChange={handleInputChange}
                         placeholder="jane@example.com"
                         autoComplete="off"
-                        className="w-full bg-transparent border-b-2 border-[#ccc] py-2 focus:border-[#007BFF] outline-none transition-colors text-lg"
+                        className="w-full bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-2 focus:border-[#007BFF] outline-none transition-colors text-lg dark:text-white"
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Phone Number</label>
+                      <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Phone Number</label>
                       <input 
                         name="phone"
                         value={formData.phone}
                         onChange={handleInputChange}
                         placeholder="+1 234 567 890"
                         autoComplete="off"
-                        className="w-full bg-transparent border-b-2 border-[#ccc] py-2 focus:border-[#007BFF] outline-none transition-colors text-lg"
+                        className="w-full bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-2 focus:border-[#007BFF] outline-none transition-colors text-lg dark:text-white"
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">LinkedIn URL</label>
+                      <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">LinkedIn URL</label>
                       <input 
                         name="linkedin"
                         value={formData.linkedin}
                         onChange={handleInputChange}
                         placeholder="linkedin.com/in/janedoe"
                         autoComplete="off"
-                        className="w-full bg-transparent border-b-2 border-[#ccc] py-2 focus:border-[#007BFF] outline-none transition-colors text-lg"
+                        className="w-full bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-2 focus:border-[#007BFF] outline-none transition-colors text-lg dark:text-white"
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">GitHub URL</label>
+                      <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">GitHub URL</label>
                       <input 
                         name="github"
                         value={formData.github}
                         onChange={handleInputChange}
                         placeholder="github.com/janedoe"
                         autoComplete="off"
-                        className="w-full bg-transparent border-b-2 border-[#ccc] py-2 focus:border-[#007BFF] outline-none transition-colors text-lg"
+                        className="w-full bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-2 focus:border-[#007BFF] outline-none transition-colors text-lg dark:text-white"
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Portfolio URL</label>
+                      <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Portfolio URL</label>
                       <input 
                         name="portfolio"
                         value={formData.portfolio}
                         onChange={handleInputChange}
                         placeholder="portfolio.com"
                         autoComplete="off"
-                        className="w-full bg-transparent border-b-2 border-[#ccc] py-2 focus:border-[#007BFF] outline-none transition-colors text-lg"
+                        className="w-full bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-2 focus:border-[#007BFF] outline-none transition-colors text-lg dark:text-white"
                       />
                     </div>
                   </div>
@@ -1120,16 +1228,16 @@ export default function App() {
 
                 {/* Profile Photo */}
                 <section className="space-y-6">
-                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] pb-2">
-                    <User size={16} className="text-[#8E8E8E]" />
-                    <h2 className="text-xs font-bold uppercase tracking-widest">Profile Photo</h2>
+                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] dark:border-zinc-800 pb-2">
+                    <User size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
+                    <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">Profile Photo</h2>
                   </div>
                   <div className="flex items-center gap-8">
-                    <div className="w-24 h-24 rounded-full bg-[#F5F5F4] border-2 border-dashed border-[#E5E5E5] flex items-center justify-center overflow-hidden">
+                    <div className="w-24 h-24 rounded-full bg-[#F5F5F4] dark:bg-zinc-800 border-2 border-dashed border-[#E5E5E5] dark:border-zinc-700 flex items-center justify-center overflow-hidden transition-colors">
                       {profilePhoto ? (
                         <img src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
                       ) : (
-                        <User size={32} className="text-[#E5E5E5]" />
+                        <User size={32} className="text-[#E5E5E5] dark:text-zinc-600" />
                       )}
                     </div>
                     <div className="flex-1">
@@ -1186,21 +1294,21 @@ export default function App() {
 
                 {/* Experience */}
                 <section className="space-y-6">
-                  <div className="flex items-center justify-between border-b border-[#E5E5E5] pb-2">
+                  <div className="flex items-center justify-between border-b border-[#E5E5E5] dark:border-zinc-800 pb-2">
                     <div className="flex items-center gap-4">
-                      <Briefcase size={16} className="text-[#8E8E8E]" />
-                      <h2 className="text-xs font-bold uppercase tracking-widest">Experience</h2>
+                      <Briefcase size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
+                      <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">Experience</h2>
                     </div>
-                    <button onClick={addExperience} className="text-[10px] uppercase tracking-widest font-bold flex items-center gap-1 hover:text-[#8E8E8E] transition-colors">
+                    <button onClick={addExperience} className="text-[10px] uppercase tracking-widest font-bold flex items-center gap-1 hover:text-[#8E8E8E] dark:hover:text-zinc-400 transition-colors dark:text-zinc-500">
                       <Plus size={12} /> Add
                     </button>
                   </div>
                   <div className="space-y-8">
                     {experience.map((exp) => (
-                      <div key={exp.id} className="relative group bg-white p-6 rounded-2xl border border-[#E5E5E5] hover:shadow-xl hover:shadow-black/5 transition-all">
+                      <div key={exp.id} className="relative group card p-6 border border-[#E5E5E5] dark:border-zinc-800 hover:shadow-xl hover:shadow-black/5 transition-all">
                         <button 
                           onClick={() => removeExperience(exp.id)}
-                          className="absolute top-4 right-4 text-[#E5E5E5] hover:text-red-500 transition-colors"
+                          className="absolute top-4 right-4 text-[#E5E5E5] dark:text-zinc-700 hover:text-red-500 transition-colors"
                         >
                           <Trash2 size={16} />
                         </button>
@@ -1210,28 +1318,28 @@ export default function App() {
                             onChange={e => updateExperience(exp.id, 'company', e.target.value)}
                             placeholder="Company Name"
                             autoComplete="off"
-                            className="bg-transparent border-b-2 border-[#ccc] py-1 focus:border-[#007BFF] outline-none text-sm font-bold"
+                            className="bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-1 focus:border-[#007BFF] outline-none text-sm font-bold dark:text-white"
                           />
                           <input 
                             value={exp.role}
                             onChange={e => updateExperience(exp.id, 'role', e.target.value)}
                             placeholder="Job Title"
                             autoComplete="off"
-                            className="bg-transparent border-b-2 border-[#ccc] py-1 focus:border-[#007BFF] outline-none text-sm"
+                            className="bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-1 focus:border-[#007BFF] outline-none text-sm dark:text-white"
                           />
                           <input 
                             value={exp.duration}
                             onChange={e => updateExperience(exp.id, 'duration', e.target.value)}
                             placeholder="Duration (e.g. 2020 - Present)"
                             autoComplete="off"
-                            className="bg-transparent border-b-2 border-[#ccc] py-1 focus:border-[#007BFF] outline-none text-xs font-mono"
+                            className="bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-1 focus:border-[#007BFF] outline-none text-xs font-mono dark:text-zinc-400"
                           />
                         </div>
                         <textarea 
                           value={exp.description}
                           onChange={e => updateExperience(exp.id, 'description', e.target.value)}
                           placeholder="Describe your responsibilities and achievements..."
-                          className="w-full bg-[#F5F5F4] p-3 rounded-lg text-xs min-h-[80px] outline-none focus:ring-1 focus:ring-[#1A1A1A]"
+                          className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-3 rounded-lg text-xs min-h-[80px] outline-none focus:ring-1 focus:ring-[#1A1A1A] dark:focus:ring-white dark:text-white transition-colors"
                         />
                       </div>
                     ))}
@@ -1240,21 +1348,21 @@ export default function App() {
 
                 {/* Education */}
                 <section className="space-y-6">
-                  <div className="flex items-center justify-between border-b border-[#E5E5E5] pb-2">
+                  <div className="flex items-center justify-between border-b border-[#E5E5E5] dark:border-zinc-800 pb-2">
                     <div className="flex items-center gap-4">
-                      <GraduationCap size={16} className="text-[#8E8E8E]" />
-                      <h2 className="text-xs font-bold uppercase tracking-widest">Education</h2>
+                      <GraduationCap size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
+                      <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">Education</h2>
                     </div>
-                    <button onClick={addEducation} className="text-[10px] uppercase tracking-widest font-bold flex items-center gap-1 hover:text-[#8E8E8E] transition-colors">
+                    <button onClick={addEducation} className="text-[10px] uppercase tracking-widest font-bold flex items-center gap-1 hover:text-[#8E8E8E] dark:hover:text-zinc-400 transition-colors dark:text-zinc-500">
                       <Plus size={12} /> Add
                     </button>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {education.map((edu) => (
-                      <div key={edu.id} className="bg-white p-6 rounded-2xl border border-[#E5E5E5] relative">
+                      <div key={edu.id} className="card p-6 border border-[#E5E5E5] dark:border-zinc-800 relative transition-colors">
                         <button 
                           onClick={() => removeEducation(edu.id)}
-                          className="absolute top-4 right-4 text-[#E5E5E5] hover:text-red-500 transition-colors"
+                          className="absolute top-4 right-4 text-[#E5E5E5] dark:text-zinc-700 hover:text-red-500 transition-colors"
                         >
                           <Trash2 size={14} />
                         </button>
@@ -1263,7 +1371,7 @@ export default function App() {
                           onChange={e => updateEducation(edu.id, 'school', e.target.value)}
                           placeholder="University Name"
                           autoComplete="off"
-                          className="w-full bg-transparent border-b-2 border-[#ccc] py-1 mb-3 focus:border-[#007BFF] outline-none text-sm font-bold"
+                          className="w-full bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-1 mb-3 focus:border-[#007BFF] outline-none text-sm font-bold dark:text-white"
                         />
                         <div className="flex gap-4 mb-3">
                           <input 
@@ -1271,21 +1379,21 @@ export default function App() {
                             onChange={e => updateEducation(edu.id, 'degree', e.target.value)}
                             placeholder="Degree"
                             autoComplete="off"
-                            className="flex-1 bg-transparent border-b-2 border-[#ccc] py-1 focus:border-[#007BFF] outline-none text-xs"
+                            className="flex-1 bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-1 focus:border-[#007BFF] outline-none text-xs dark:text-white"
                           />
                           <input 
                             value={edu.year}
                             onChange={e => updateEducation(edu.id, 'year', e.target.value)}
                             placeholder="Year"
                             autoComplete="off"
-                            className="w-20 bg-transparent border-b-2 border-[#ccc] py-1 focus:border-[#007BFF] outline-none text-xs font-mono"
+                            className="w-20 bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-1 focus:border-[#007BFF] outline-none text-xs font-mono dark:text-zinc-400"
                           />
                         </div>
                         <textarea 
                           value={edu.description}
                           onChange={e => updateEducation(edu.id, 'description', e.target.value)}
                           placeholder="Highlights (e.g. GPA, relevant courses...)"
-                          className="w-full bg-[#F5F5F4] p-3 rounded-lg text-xs min-h-[60px] outline-none focus:ring-1 focus:ring-[#1A1A1A]"
+                          className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-3 rounded-lg text-xs min-h-[60px] outline-none focus:ring-1 focus:ring-[#1A1A1A] dark:focus:ring-white dark:text-white transition-colors"
                         />
                       </div>
                     ))}
@@ -1294,18 +1402,18 @@ export default function App() {
 
                 {/* Academic Performance */}
                 <section className="space-y-6">
-                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] pb-2">
-                    <GraduationCap size={16} className="text-[#8E8E8E]" />
-                    <h2 className="text-xs font-bold uppercase tracking-widest">Academic Performance</h2>
+                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] dark:border-zinc-800 pb-2">
+                    <GraduationCap size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
+                    <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">Academic Performance</h2>
                   </div>
                   <div className="space-y-4">
                     <div className="space-y-1">
-                      <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Academic Details</label>
+                      <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Academic Details</label>
                       <textarea 
                         value={academicDetails}
                         onChange={e => setAcademicDetails(e.target.value)}
                         placeholder="List academic highlights (one per sentence)..."
-                        className="w-full bg-white border border-[#E5E5E5] p-4 rounded-lg focus:border-[#1A1A1A] outline-none transition-colors min-h-[100px] text-sm leading-relaxed"
+                        className="w-full bg-white dark:bg-zinc-900 border border-[#E5E5E5] dark:border-zinc-800 p-4 rounded-lg focus:border-[#1A1A1A] dark:focus:border-white outline-none transition-colors min-h-[100px] text-sm leading-relaxed dark:text-white"
                       />
                     </div>
                   </div>
@@ -1313,21 +1421,21 @@ export default function App() {
 
                 {/* Projects */}
                 <section className="space-y-6">
-                  <div className="flex items-center justify-between border-b border-[#E5E5E5] pb-2">
+                  <div className="flex items-center justify-between border-b border-[#E5E5E5] dark:border-zinc-800 pb-2">
                     <div className="flex items-center gap-4">
-                      <FileText size={16} className="text-[#8E8E8E]" />
-                      <h2 className="text-xs font-bold uppercase tracking-widest">Projects</h2>
+                      <FileText size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
+                      <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">Projects</h2>
                     </div>
-                    <button onClick={addProject} className="text-[10px] uppercase tracking-widest font-bold flex items-center gap-1 hover:text-[#8E8E8E] transition-colors">
+                    <button onClick={addProject} className="text-[10px] uppercase tracking-widest font-bold flex items-center gap-1 hover:text-[#8E8E8E] dark:hover:text-zinc-400 transition-colors dark:text-zinc-500">
                       <Plus size={12} /> Add
                     </button>
                   </div>
                   <div className="space-y-8">
                     {projects.map((proj) => (
-                      <div key={proj.id} className="relative group bg-white p-6 rounded-2xl border border-[#E5E5E5] hover:shadow-xl hover:shadow-black/5 transition-all">
+                      <div key={proj.id} className="relative group card p-6 border border-[#E5E5E5] dark:border-zinc-800 hover:shadow-xl hover:shadow-black/5 transition-all">
                         <button 
                           onClick={() => removeProject(proj.id)}
-                          className="absolute top-4 right-4 text-[#E5E5E5] hover:text-red-500 transition-colors"
+                          className="absolute top-4 right-4 text-[#E5E5E5] dark:text-zinc-700 hover:text-red-500 transition-colors"
                         >
                           <Trash2 size={16} />
                         </button>
@@ -1336,13 +1444,13 @@ export default function App() {
                           onChange={e => updateProject(proj.id, 'title', e.target.value)}
                           placeholder="Project Title"
                           autoComplete="off"
-                          className="w-full bg-transparent border-b-2 border-[#ccc] py-1 mb-4 focus:border-[#007BFF] outline-none text-sm font-bold"
+                          className="w-full bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-1 mb-4 focus:border-[#007BFF] outline-none text-sm font-bold dark:text-white"
                         />
                         <textarea 
                           value={proj.description}
                           onChange={e => updateProject(proj.id, 'description', e.target.value)}
                           placeholder="Describe your project..."
-                          className="w-full bg-[#F5F5F4] p-3 rounded-lg text-xs min-h-[80px] outline-none focus:ring-1 focus:ring-[#1A1A1A]"
+                          className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-3 rounded-lg text-xs min-h-[80px] outline-none focus:ring-1 focus:ring-[#1A1A1A] dark:focus:ring-white dark:text-white transition-colors"
                         />
                       </div>
                     ))}
@@ -1351,9 +1459,9 @@ export default function App() {
 
                 {/* Certificates */}
                 <section className="space-y-6">
-                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] pb-2">
-                    <Shield size={16} className="text-[#8E8E8E]" />
-                    <h2 className="text-xs font-bold uppercase tracking-widest">Certificates</h2>
+                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] dark:border-zinc-800 pb-2">
+                    <Shield size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
+                    <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">Certificates</h2>
                   </div>
                   <div className="space-y-4">
                     <input 
@@ -1370,12 +1478,12 @@ export default function App() {
                         const fileNames = filteredFiles.map((f: any) => f.name);
                         setCertificates(prev => [...prev, ...fileNames]);
                       }}
-                      className="text-xs text-[#8E8E8E] file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-[#1A1A1A] file:text-white hover:file:bg-[#333] transition-all"
+                      className="text-xs text-[#8E8E8E] dark:text-zinc-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-[#1A1A1A] dark:file:bg-white file:text-white dark:file:text-black hover:file:bg-[#333] dark:hover:file:bg-zinc-200 transition-all"
                     />
-                    <p className="text-[10px] text-[#8E8E8E] mt-2 font-mono uppercase tracking-widest">Supported formats: PDF, PNG, JPEG (JPG not allowed), max 80MB per file</p>
+                    <p className="text-[10px] text-[#8E8E8E] dark:text-zinc-500 mt-2 font-mono uppercase tracking-widest">Supported formats: PDF, PNG, JPEG (JPG not allowed), max 80MB per file</p>
                     <div className="flex flex-wrap gap-2">
                       {certificates.map((cert, idx) => (
-                        <div key={idx} className="bg-[#F5F5F4] px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-2">
+                        <div key={idx} className="bg-[#F5F5F4] dark:bg-zinc-800 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 dark:text-white transition-colors">
                           {cert}
                           <button onClick={() => setCertificates(prev => prev.filter((_, i) => i !== idx))} className="text-red-500 hover:text-red-700">
                             <Plus size={12} className="rotate-45" />
@@ -1388,29 +1496,29 @@ export default function App() {
 
                 {/* Skills */}
                 <section className="space-y-6">
-                  <div className="flex items-center justify-between border-b border-[#E5E5E5] pb-2">
+                  <div className="flex items-center justify-between border-b border-[#E5E5E5] dark:border-zinc-800 pb-2">
                     <div className="flex items-center gap-4">
-                      <Wrench size={16} className="text-[#8E8E8E]" />
-                      <h2 className="text-xs font-bold uppercase tracking-widest">Technical Skills</h2>
+                      <Wrench size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
+                      <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">Technical Skills</h2>
                     </div>
-                    <button onClick={addSkillCategory} className="text-[10px] uppercase tracking-widest font-bold flex items-center gap-1 hover:text-[#8E8E8E] transition-colors">
+                    <button onClick={addSkillCategory} className="text-[10px] uppercase tracking-widest font-bold flex items-center gap-1 hover:text-[#8E8E8E] dark:hover:text-zinc-400 transition-colors dark:text-zinc-500">
                       <Plus size={12} /> Add Category
                     </button>
                   </div>
                   <div className="space-y-6">
                     {skillCategories.map((cat) => (
-                      <div key={cat.id} className="bg-white p-6 rounded-2xl border border-[#E5E5E5] space-y-4">
+                      <div key={cat.id} className="card p-6 border border-[#E5E5E5] dark:border-zinc-800 space-y-4 transition-colors">
                         <div className="flex items-center justify-between gap-4">
                           <input 
                             value={cat.name}
                             onChange={e => updateSkillCategoryName(cat.id, e.target.value)}
                             placeholder="Category (e.g. Languages)"
                             autoComplete="off"
-                            className="bg-transparent border-b-2 border-[#ccc] py-1 focus:border-[#007BFF] outline-none text-sm font-bold flex-1"
+                            className="bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-1 focus:border-[#007BFF] outline-none text-sm font-bold flex-1 dark:text-white"
                           />
                           <button 
                             onClick={() => removeSkillCategory(cat.id)}
-                            className="text-[#E5E5E5] hover:text-red-500 transition-colors"
+                            className="text-[#E5E5E5] dark:text-zinc-700 hover:text-red-500 transition-colors"
                           >
                             <Trash2 size={14} />
                           </button>
@@ -1418,19 +1526,19 @@ export default function App() {
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {cat.skills.map((skill) => (
-                            <div key={skill.id} className="flex items-center gap-2 bg-[#F5F5F4] p-2 rounded-xl group/skill">
+                            <div key={skill.id} className="flex items-center gap-2 bg-[#F5F5F4] dark:bg-zinc-800 p-2 rounded-xl group/skill transition-colors">
                               <div className="relative group/icon">
-                                <button className="w-8 h-8 flex items-center justify-center bg-white rounded-lg border border-[#E5E5E5] hover:border-[#1A1A1A] transition-colors">
-                                  {React.createElement(getIconComponent(skill.icon), { size: 14 })}
+                                <button className="w-8 h-8 flex items-center justify-center bg-white dark:bg-zinc-900 rounded-lg border border-[#E5E5E5] dark:border-zinc-700 hover:border-[#1A1A1A] dark:hover:border-white transition-colors">
+                                  {React.createElement(getIconComponent(skill.icon), { size: 14, className: "dark:text-zinc-400" })}
                                 </button>
-                                <div className="absolute top-full left-0 mt-2 bg-white border border-[#E5E5E5] rounded-xl shadow-xl p-2 hidden group-focus-within/icon:grid grid-cols-5 gap-1 z-50 w-[200px]">
+                                <div className="absolute top-full left-0 mt-2 bg-white dark:bg-zinc-900 border border-[#E5E5E5] dark:border-zinc-800 rounded-xl shadow-xl p-2 hidden group-focus-within/icon:grid grid-cols-5 gap-1 z-50 w-[200px]">
                                   {ICON_OPTIONS.map((opt) => (
                                     <button 
                                       key={opt.name}
                                       onClick={() => updateSkill(cat.id, skill.id, 'icon', opt.name)}
                                       className={cn(
-                                        "w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#F5F5F4] transition-colors",
-                                        skill.icon === opt.name && "bg-[#1A1A1A] text-white"
+                                        "w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#F5F5F4] dark:hover:bg-zinc-800 transition-colors",
+                                        skill.icon === opt.name && "bg-[#1A1A1A] dark:bg-white text-white dark:text-black"
                                       )}
                                     >
                                       <opt.icon size={14} />
@@ -1443,11 +1551,11 @@ export default function App() {
                                 onChange={e => updateSkill(cat.id, skill.id, 'name', e.target.value)}
                                 placeholder="Skill"
                                 autoComplete="off"
-                                className="bg-transparent border-none outline-none text-xs flex-1"
+                                className="bg-transparent border-none outline-none text-xs flex-1 dark:text-white"
                               />
                               <button 
                                 onClick={() => removeSkillFromCategory(cat.id, skill.id)}
-                                className="text-[#E5E5E5] hover:text-red-500 transition-colors opacity-0 group-hover/skill:opacity-100"
+                                className="text-[#E5E5E5] dark:text-zinc-700 hover:text-red-500 transition-colors opacity-0 group-hover/skill:opacity-100"
                               >
                                 <Trash2 size={12} />
                               </button>
@@ -1455,7 +1563,7 @@ export default function App() {
                           ))}
                           <button 
                             onClick={() => addSkillToCategory(cat.id)}
-                            className="flex items-center justify-center gap-2 border-2 border-dashed border-[#E5E5E5] rounded-xl py-2 text-[10px] uppercase tracking-widest font-bold text-[#8E8E8E] hover:border-[#1A1A1A] hover:text-[#1A1A1A] transition-all"
+                            className="flex items-center justify-center gap-2 border-2 border-dashed border-[#E5E5E5] dark:border-zinc-800 rounded-xl py-2 text-[10px] uppercase tracking-widest font-bold text-[#8E8E8E] dark:text-zinc-500 hover:border-[#1A1A1A] dark:hover:border-white hover:text-[#1A1A1A] dark:hover:text-white transition-all"
                           >
                             <Plus size={12} /> Add Skill
                           </button>
@@ -1467,21 +1575,21 @@ export default function App() {
 
                 {/* Custom Sections */}
                 <section className="space-y-6">
-                  <div className="flex items-center justify-between border-b border-[#E5E5E5] pb-2">
+                  <div className="flex items-center justify-between border-b border-[#E5E5E5] dark:border-zinc-800 pb-2">
                     <div className="flex items-center gap-4">
-                      <Plus size={16} className="text-[#8E8E8E]" />
-                      <h2 className="text-xs font-bold uppercase tracking-widest">Custom Sections</h2>
+                      <Plus size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
+                      <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">Custom Sections</h2>
                     </div>
-                    <button onClick={addCustomSection} className="text-[10px] uppercase tracking-widest font-bold flex items-center gap-1 hover:text-[#8E8E8E] transition-colors">
+                    <button onClick={addCustomSection} className="text-[10px] uppercase tracking-widest font-bold flex items-center gap-1 hover:text-[#8E8E8E] dark:hover:text-zinc-400 transition-colors dark:text-zinc-500">
                       <Plus size={12} /> Add Section
                     </button>
                   </div>
                   <div className="space-y-8">
                     {customSections.map((section) => (
-                      <div key={section.id} className="relative group bg-white p-6 rounded-2xl border border-[#E5E5E5] hover:shadow-xl hover:shadow-black/5 transition-all">
+                      <div key={section.id} className="relative group card p-6 border border-[#E5E5E5] dark:border-zinc-800 hover:shadow-xl hover:shadow-black/5 transition-all">
                         <button 
                           onClick={() => removeCustomSection(section.id)}
-                          className="absolute top-4 right-4 text-[#E5E5E5] hover:text-red-500 transition-colors"
+                          className="absolute top-4 right-4 text-[#E5E5E5] dark:text-zinc-700 hover:text-red-500 transition-colors"
                         >
                           <Trash2 size={16} />
                         </button>
@@ -1490,13 +1598,13 @@ export default function App() {
                           onChange={e => updateCustomSection(section.id, 'title', e.target.value)}
                           placeholder="Section Title (e.g. Certifications)"
                           autoComplete="off"
-                          className="w-full bg-transparent border-b-2 border-[#ccc] py-1 mb-4 focus:border-[#007BFF] outline-none text-sm font-bold"
+                          className="w-full bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-1 mb-4 focus:border-[#007BFF] outline-none text-sm font-bold dark:text-white"
                         />
                         <textarea 
                           value={section.content}
                           onChange={e => updateCustomSection(section.id, 'content', e.target.value)}
                           placeholder="Section content..."
-                          className="w-full bg-[#F5F5F4] p-3 rounded-lg text-xs min-h-[100px] outline-none focus:ring-1 focus:ring-[#1A1A1A]"
+                          className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-3 rounded-lg text-xs min-h-[100px] outline-none focus:ring-1 focus:ring-[#1A1A1A] dark:focus:ring-white dark:text-white transition-colors"
                         />
                       </div>
                     ))}
@@ -1556,7 +1664,7 @@ export default function App() {
 
                 <div className="pt-12 flex flex-col gap-6">
                   {atsScoreResult !== null && (
-                    <div className="bg-white p-8 rounded-[40px] border border-[#E5E5E5] space-y-6 animate-in fade-in zoom-in-95">
+                    <div className="card p-8 border border-[#E5E5E5] space-y-6 animate-in fade-in zoom-in-95">
                       <div className="flex items-center justify-between border-b border-[#F5F5F4] pb-4">
                         <div className="flex items-center gap-3">
                           <Zap size={20} className="text-amber-500" />
@@ -1626,32 +1734,32 @@ export default function App() {
 
                 {/* Quick Live Preview Section */}
                 <section className="mt-16 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] pb-2">
-                    <Activity size={16} className="text-[#8E8E8E]" />
-                    <h2 className="text-xs font-bold uppercase tracking-widest">Live Resume Preview</h2>
+                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] dark:border-zinc-800 pb-2">
+                    <Activity size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
+                    <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">Live Resume Preview</h2>
                   </div>
-                  <div className="bg-white p-8 rounded-[40px] border border-[#E5E5E5] shadow-xl shadow-black/5">
+                  <div className="card p-8 border border-[#E5E5E5] dark:border-zinc-800 shadow-xl shadow-black/5 transition-colors">
                     <div className="space-y-4">
-                      <h2 className="text-2xl font-bold uppercase tracking-tight">{formData.fullName || "Your Name"}</h2>
-                      <h3 className="text-lg font-serif italic text-[#8E8E8E]">{formData.role || "Job Role"}</h3>
+                      <h2 className="text-2xl font-bold uppercase tracking-tight dark:text-white">{formData.fullName || "Your Name"}</h2>
+                      <h3 className="text-lg font-serif italic text-[#8E8E8E] dark:text-zinc-500">{formData.role || "Job Role"}</h3>
                       
                       <div className="pt-4 space-y-2">
-                        <h4 className="text-xs font-bold uppercase tracking-widest border-b border-[#F5F5F4] pb-1">Skills</h4>
-                        <p className="text-sm text-[#4A4A4A]">
+                        <h4 className="text-xs font-bold uppercase tracking-widest border-b border-[#F5F5F4] dark:border-zinc-800 pb-1 dark:text-zinc-400">Skills</h4>
+                        <p className="text-sm text-[#4A4A4A] dark:text-zinc-300">
                           {skillCategories.flatMap(c => c.skills.map(s => s.name)).join(", ") || "No skills added yet"}
                         </p>
                       </div>
 
                       <div className="pt-4 space-y-2">
-                        <h4 className="text-xs font-bold uppercase tracking-widest border-b border-[#F5F5F4] pb-1">Experience</h4>
+                        <h4 className="text-xs font-bold uppercase tracking-widest border-b border-[#F5F5F4] dark:border-zinc-800 pb-1 dark:text-zinc-400">Experience</h4>
                         <div className="space-y-4">
                           {experience.length > 0 ? experience.map(exp => (
                             <div key={exp.id}>
-                              <p className="text-sm font-bold">{exp.role} at {exp.company}</p>
-                              <p className="text-xs text-[#8E8E8E]">{exp.duration}</p>
-                              <p className="text-xs mt-1 text-[#4A4A4A] line-clamp-2">{exp.description}</p>
+                              <p className="text-sm font-bold dark:text-white">{exp.role} at {exp.company}</p>
+                              <p className="text-xs text-[#8E8E8E] dark:text-zinc-500">{exp.duration}</p>
+                              <p className="text-xs mt-1 text-[#4A4A4A] dark:text-zinc-300 line-clamp-2">{exp.description}</p>
                             </div>
-                          )) : <p className="text-sm text-[#8E8E8E] italic">No experience added yet</p>}
+                          )) : <p className="text-sm text-[#8E8E8E] dark:text-zinc-500 italic">No experience added yet</p>}
                         </div>
                       </div>
                     </div>
@@ -1669,19 +1777,19 @@ export default function App() {
                 className="max-w-5xl mx-auto space-y-8"
               >
                 {/* Template Selection Dropdown */}
-                <div className="flex items-center justify-between bg-white p-6 rounded-2xl border border-[#E5E5E5] shadow-sm print:hidden">
+                <div className="flex items-center justify-between bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-[#E5E5E5] dark:border-zinc-800 shadow-sm print:hidden transition-colors">
                   <div className="flex items-center gap-4">
-                    <Layers size={20} className="text-[#1A1A1A]" />
+                    <Layers size={20} className="text-[#1A1A1A] dark:text-white" />
                     <div>
-                      <h3 className="text-sm font-bold uppercase tracking-widest">Choose Resume Template</h3>
-                      <p className="text-[10px] text-[#8E8E8E] font-mono uppercase tracking-widest">Select a style for your professional narrative</p>
+                      <h3 className="text-sm font-bold uppercase tracking-widest dark:text-white">Choose Resume Template</h3>
+                      <p className="text-[10px] text-[#8E8E8E] dark:text-zinc-500 font-mono uppercase tracking-widest">Select a style for your professional narrative</p>
                     </div>
                   </div>
                   <select 
                     id="templateSelect"
                     value={selectedTemplate}
                     onChange={(e) => setSelectedTemplate(e.target.value)}
-                    className="bg-[#F5F5F4] border-none outline-none px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-widest cursor-pointer hover:bg-[#E5E5E5] transition-all"
+                    className="bg-[#F5F5F4] dark:bg-zinc-800 dark:text-white border-none outline-none px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-widest cursor-pointer hover:bg-[#E5E5E5] dark:hover:bg-zinc-700 transition-all"
                   >
                     <option value="template1">Professional</option>
                     <option value="template2">Modern</option>
@@ -1911,10 +2019,10 @@ export default function App() {
                 {isMatching ? (
                   <div className="h-[400px] flex flex-col items-center justify-center gap-6">
                     <div className="relative">
-                      <Loader2 className="w-16 h-16 animate-spin text-[#1A1A1A] opacity-20" />
-                      <Search className="absolute inset-0 m-auto w-6 h-6 text-[#1A1A1A]" />
+                      <Loader2 className="w-16 h-16 animate-spin text-[#1A1A1A] dark:text-white opacity-20" />
+                      <Search className="absolute inset-0 m-auto w-6 h-6 text-[#1A1A1A] dark:text-white" />
                     </div>
-                    <p className="text-xs font-mono uppercase tracking-widest opacity-50 animate-pulse">Scanning global job markets...</p>
+                    <p className="text-xs font-mono uppercase tracking-widest opacity-50 animate-pulse dark:text-zinc-400">Scanning global job markets...</p>
                   </div>
                 ) : isResumeInvalid && jobMatches.length === 0 ? (
                   <div className="py-20 text-center border-2 border-dashed border-red-200 rounded-[40px] bg-red-50/30 animate-in fade-in zoom-in-95">
@@ -1934,35 +2042,35 @@ export default function App() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {jobMatches.length > 0 ? (
                       jobMatches.map((job, i) => (
-                        <div key={i} className="bg-white p-8 rounded-3xl border border-[#E5E5E5] hover:border-[#1A1A1A] transition-all group">
+                        <div key={i} className="card p-8 border border-[#E5E5E5] dark:border-zinc-800 hover:border-[#1A1A1A] dark:hover:border-white transition-all group">
                           <div className="flex justify-between items-start mb-6">
-                            <div className="w-12 h-12 bg-[#F5F5F4] rounded-2xl flex items-center justify-center group-hover:bg-[#1A1A1A] group-hover:text-white transition-colors">
+                            <div className="w-12 h-12 bg-[#F5F5F4] dark:bg-zinc-800 rounded-2xl flex items-center justify-center group-hover:bg-[#1A1A1A] group-hover:text-white dark:group-hover:bg-white dark:group-hover:text-black transition-colors">
                               <Briefcase size={20} />
                             </div>
                             <div className="text-right">
-                              <p className="text-[10px] font-mono uppercase tracking-widest opacity-40">Match Score</p>
+                              <p className="text-[10px] font-mono uppercase tracking-widest opacity-40 dark:text-zinc-500">Match Score</p>
                               <p className="text-2xl font-serif font-bold text-green-600">{job.matchScore}%</p>
                             </div>
                           </div>
-                          <h3 className="text-xl font-bold mb-1">{job.title}</h3>
-                          <p className="text-sm font-serif italic text-[#8E8E8E] mb-6">{job.company}</p>
-                          <div className="p-4 bg-[#F5F5F4] rounded-xl">
-                            <p className="text-xs leading-relaxed text-[#4A4A4A] italic">"{job.reason}"</p>
+                          <h3 className="text-xl font-bold mb-1 dark:text-white">{job.title}</h3>
+                          <p className="text-sm font-serif italic text-[#8E8E8E] dark:text-zinc-500 mb-6">{job.company}</p>
+                          <div className="p-4 bg-[#F5F5F4] dark:bg-zinc-800 rounded-xl">
+                            <p className="text-xs leading-relaxed text-[#4A4A4A] dark:text-zinc-300 italic">"{job.reason}"</p>
                           </div>
-                          <button className="w-full mt-6 py-3 bg-zinc-100 text-zinc-900 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-zinc-200 transition-colors">
+                          <button className="w-full mt-6 py-3 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
                             View Details
                             <ChevronRight size={14} />
                           </button>
                         </div>
                       ))
                     ) : (
-                      <div className="md:col-span-3 py-20 text-center border-2 border-dashed border-[#E5E5E5] rounded-3xl">
-                        <Search className="w-12 h-12 mx-auto mb-4 opacity-10" />
-                        <h3 className="text-lg font-serif italic mb-2">No matches yet</h3>
-                        <p className="text-xs text-[#8E8E8E] mb-6">Click the button below to analyze your resume and find matches.</p>
+                      <div className="md:col-span-3 py-20 text-center border-2 border-dashed border-[#E5E5E5] dark:border-zinc-800 rounded-3xl">
+                        <Search className="w-12 h-12 mx-auto mb-4 opacity-10 dark:text-white" />
+                        <h3 className="text-lg font-serif italic mb-2 dark:text-white">No matches yet</h3>
+                        <p className="text-xs text-[#8E8E8E] dark:text-zinc-500 mb-6">Click the button below to analyze your resume and find matches.</p>
                         <button 
                           onClick={findJobMatches}
-                          className="px-8 py-3 bg-[#1A1A1A] text-white rounded-full text-[10px] font-bold uppercase tracking-widest"
+                          className="px-8 py-3 bg-[#1A1A1A] dark:bg-white text-white dark:text-black rounded-full text-[10px] font-bold uppercase tracking-widest"
                         >
                           Find Matches
                         </button>
@@ -1973,14 +2081,14 @@ export default function App() {
 
                 {/* Manual Job Matcher Section */}
                 <section className="mt-16 space-y-8">
-                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] pb-2">
-                    <Search size={16} className="text-[#8E8E8E]" />
-                    <h2 className="text-xs font-bold uppercase tracking-widest">Manual Job Matcher</h2>
+                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] dark:border-zinc-800 pb-2">
+                    <Search size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
+                    <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">Manual Job Matcher</h2>
                   </div>
 
                   {/* Suggested Jobs Quick View */}
                   {suggestedJobs.length > 0 && (
-                    <div className="bg-zinc-900 text-white p-8 rounded-[40px] space-y-6">
+                    <div className="bg-zinc-900 dark:bg-zinc-950 text-white p-8 rounded-[40px] space-y-6 transition-colors">
                       <div className="flex items-center gap-3">
                         <Zap size={20} className="text-amber-400" />
                         <h3 className="text-xs font-bold uppercase tracking-widest">Suggested Jobs for You</h3>
@@ -1996,7 +2104,7 @@ export default function App() {
                     </div>
                   )}
                   
-                  <div className="bg-white p-8 rounded-[40px] border border-[#E5E5E5] space-y-8">
+                  <div className="card p-8 border border-[#E5E5E5] space-y-8">
                     <div className="space-y-4">
                       <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Paste Job Description</label>
                       <textarea 
