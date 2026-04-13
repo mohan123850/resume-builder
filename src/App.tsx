@@ -384,6 +384,7 @@ export default function App() {
     setActiveTab('jobs');
     try {
       if (!process.env.GEMINI_API_KEY) {
+        console.error("GEMINI_API_KEY is missing from process.env");
         throw new Error("Gemini API Key is missing. Please configure it in the settings.");
       }
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -417,7 +418,7 @@ export default function App() {
       `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-flash-latest",
         contents: prompt,
         config: { responseMimeType: "application/json" }
       });
@@ -617,6 +618,7 @@ export default function App() {
     setIsGeneratingAI(true);
     try {
       if (!process.env.GEMINI_API_KEY) {
+        console.error("GEMINI_API_KEY is missing from process.env");
         throw new Error("Gemini API Key is missing. Please configure it in the settings.");
       }
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -660,7 +662,7 @@ export default function App() {
       `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-flash-latest",
         contents: prompt,
         config: {
           systemInstruction: "You are a professional resume writer and career coach.",
