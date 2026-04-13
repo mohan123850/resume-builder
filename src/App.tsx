@@ -42,7 +42,7 @@ import {
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from './lib/utils';
 
@@ -383,11 +383,10 @@ export default function App() {
     setIsMatching(true);
     setActiveTab('jobs');
     try {
-      const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({ 
-        model: "gemini-1.5-flash",
-        generationConfig: { responseMimeType: "application/json" }
-      });
+      if (!process.env.GEMINI_API_KEY) {
+        throw new Error("Gemini API Key is missing. Please configure it in the settings.");
+      }
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       
       const resumeContext = `
         Name: ${formData.fullName}
@@ -417,15 +416,18 @@ export default function App() {
         }
       `;
 
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const responseText = response.text();
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+        config: { responseMimeType: "application/json" }
+      });
 
-      const matchResult = JSON.parse(responseText || '{}');
+      const matchResult = JSON.parse(response.text || '{}');
       setJobMatches(matchResult.matches || []);
     } catch (err) {
       console.error("AI Matching Error:", err);
-      alert("Failed to generate job suggestions. Please check your connection.");
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      alert(`Failed to generate job suggestions: ${errorMessage}`);
     } finally {
       setIsMatching(false);
     }
@@ -614,28 +616,10 @@ export default function App() {
 
     setIsGeneratingAI(true);
     try {
-      const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({
-        model: "gemini-1.5-flash",
-        systemInstruction: "You are a professional resume writer and career coach.",
-        generationConfig: {
-          temperature: 0.7,
-          topP: 0.9,
-          topK: 40,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: SchemaType.OBJECT,
-            properties: {
-              summary: { type: SchemaType.STRING },
-              experience: { type: SchemaType.STRING },
-              projects: { type: SchemaType.STRING },
-              education: { type: SchemaType.STRING },
-              achievements: { type: SchemaType.STRING }
-            },
-            required: ["summary", "experience", "projects", "education", "achievements"]
-          }
-        }
-      });
+      if (!process.env.GEMINI_API_KEY) {
+        throw new Error("Gemini API Key is missing. Please configure it in the settings.");
+      }
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
       const prompt = `
         Act as a senior resume writer with 10+ years of experience.
@@ -675,11 +659,30 @@ export default function App() {
         Format the experience, projects, and achievements as bullet points starting with "• ".
       `;
 
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const responseText = response.text();
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+        config: {
+          systemInstruction: "You are a professional resume writer and career coach.",
+          temperature: 0.7,
+          topP: 0.9,
+          topK: 40,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              summary: { type: Type.STRING },
+              experience: { type: Type.STRING },
+              projects: { type: Type.STRING },
+              education: { type: Type.STRING },
+              achievements: { type: Type.STRING }
+            },
+            required: ["summary", "experience", "projects", "education", "achievements"]
+          }
+        }
+      });
 
-      const data = JSON.parse(responseText || "{}");
+      const data = JSON.parse(response.text || "{}");
       const { summary, experience, projects, education, achievements } = data;
 
       const resumeHtml = `
@@ -739,7 +742,8 @@ export default function App() {
       setAiAchievements(achievements);
     } catch (error) {
       console.error("AI Generation Error:", error);
-      alert("Failed to generate AI resume. Please check your connection and try again.");
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      alert(`Failed to generate AI resume: ${errorMessage}`);
     } finally {
       setIsGeneratingAI(false);
     }
