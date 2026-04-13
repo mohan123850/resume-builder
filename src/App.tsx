@@ -42,7 +42,7 @@ import {
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from './lib/utils';
 
@@ -383,8 +383,11 @@ export default function App() {
     setIsMatching(true);
     setActiveTab('jobs');
     try {
-      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
-      const model = "gemini-3-flash-preview";
+      const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
+      const model = genAI.getGenerativeModel({ 
+        model: "gemini-1.5-flash",
+        generationConfig: { responseMimeType: "application/json" }
+      });
       
       const resumeContext = `
         Name: ${formData.fullName}
@@ -414,14 +417,12 @@ export default function App() {
         }
       `;
 
-      const response = await ai.models.generateContent({
-        model,
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
-      });
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const responseText = response.text();
 
-      const result = JSON.parse(response.text || '{}');
-      setJobMatches(result.matches || []);
+      const matchResult = JSON.parse(responseText || '{}');
+      setJobMatches(matchResult.matches || []);
     } catch (err) {
       console.error("AI Matching Error:", err);
       alert("Failed to generate job suggestions. Please check your connection.");
@@ -613,7 +614,29 @@ export default function App() {
 
     setIsGeneratingAI(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
+      const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
+      const model = genAI.getGenerativeModel({
+        model: "gemini-1.5-flash",
+        systemInstruction: "You are a professional resume writer and career coach.",
+        generationConfig: {
+          temperature: 0.7,
+          topP: 0.9,
+          topK: 40,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: SchemaType.OBJECT,
+            properties: {
+              summary: { type: SchemaType.STRING },
+              experience: { type: SchemaType.STRING },
+              projects: { type: SchemaType.STRING },
+              education: { type: SchemaType.STRING },
+              achievements: { type: SchemaType.STRING }
+            },
+            required: ["summary", "experience", "projects", "education", "achievements"]
+          }
+        }
+      });
+
       const prompt = `
         Act as a senior resume writer with 10+ years of experience.
         Your task is to generate a clean, ATS-friendly, professional resume based on user input.
@@ -652,30 +675,11 @@ export default function App() {
         Format the experience, projects, and achievements as bullet points starting with "• ".
       `;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-          systemInstruction: "You are a professional resume writer and career coach.",
-          temperature: 0.7,
-          topP: 0.9,
-          topK: 40,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              summary: { type: Type.STRING },
-              experience: { type: Type.STRING },
-              projects: { type: Type.STRING },
-              education: { type: Type.STRING },
-              achievements: { type: Type.STRING }
-            },
-            required: ["summary", "experience", "projects", "education", "achievements"]
-          }
-        }
-      });
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const responseText = response.text();
 
-      const data = JSON.parse(response.text || "{}");
+      const data = JSON.parse(responseText || "{}");
       const { summary, experience, projects, education, achievements } = data;
 
       const resumeHtml = `
