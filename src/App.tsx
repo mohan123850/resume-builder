@@ -42,6 +42,7 @@ import {
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
+import html2pdf from "html2pdf.js";
 import { GoogleGenAI, Type } from "@google/genai";
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from './lib/utils';
@@ -52,6 +53,7 @@ interface Education {
   school: string;
   degree: string;
   year: string;
+  percentage?: string;
   description: string;
 }
 
@@ -66,6 +68,7 @@ interface Experience {
 interface Project {
   id: string;
   title: string;
+  tech?: string;
   description: string;
 }
 
@@ -122,23 +125,43 @@ const getIconComponent = (name: string) => {
   return found ? found.icon : Code;
 };
 
+const SKILL_ROLE_MAP: Record<string, string[]> = {
+  "Frontend Developer": ["React", "TypeScript", "Tailwind CSS", "JavaScript", "HTML5", "CSS3", "Redux", "Vite", "Next.js", "Web Performance"],
+  "Backend Developer": ["Node.js", "Express", "PostgreSQL", "MongoDB", "Docker", "REST API", "GraphQL", "Python", "Java", "Microservices"],
+  "Full Stack Developer": ["React", "Node.js", "TypeScript", "SQL", "Git", "AWS", "Express", "PostgreSQL", "JavaScript", "Tailwind CSS"],
+  "Data Scientist": ["Python", "SQL", "Machine Learning", "Pandas", "Scikit-Learn", "TensorFlow", "Statistics", "Data Visualization", "R"],
+  "UI/UX Designer": ["Figma", "Adobe XD", "User Research", "Wireframing", "Prototyping", "Design Systems", "Visual Design", "Sketch"],
+  "Product Manager": ["Agile", "Scrum", "Product Roadmap", "JIRA", "Data Analysis", "Market Research", "Stakeholder Management", "PRDs"],
+  "Software Engineer": ["Java", "C++", "Python", "Data Structures", "Algorithms", "System Design", "Git", "Unit Testing", "Go"],
+  "DevOps Engineer": ["AWS", "Docker", "Kubernetes", "CI/CD", "Terraform", "Jenkins", "Linux", "Ansible", "Monitoring"],
+  "Data Analyst": ["SQL", "Excel", "Tableau", "Power BI", "Python", "Statistics", "Data Cleaning", "Data Visualization"],
+  "Marketing Specialist": ["SEO", "Google Analytics", "Content Strategy", "Email Marketing", "PPC", "Social Media", "Copywriting"],
+  "HR Manager": ["Recruitment", "Employee Relations", "Payroll", "Performance Management", "Conflict Resolution", "Policy Writing"],
+  "Financial Analyst": ["Excel", "Financial Modeling", "Budgeting", "Forecasting", "ERP Systems", "Data Analysis", "Reporting"],
+  "Cybersecurity Analyst": ["Network Security", "Penetration Testing", "SIEM", "Firewalls", "Incident Response", "Vulnerability Assessment"]
+};
+
 function isValidText(text: string) {
-  // Reject too short or random strings
-  if (!text || text.trim().length < 3) return false;
-
-  // Reject strings with no vowels (common in gibberish)
-  if (!/[aeiouAEIOU]/.test(text)) return false;
-
-  // Reject too many random characters
-  if (/^[^a-zA-Z\s]+$/.test(text)) return false;
-
+  if (!text || text.trim().length < 2) return false;
+  if (!/[a-zA-Z]/.test(text)) return false;
   return true;
 }
 
 function isGibberish(text: string) {
-  const words = text.split(" ");
-  let validWords = words.filter(word => word.length > 2);
-  return validWords.length < 2;
+  if (!text) return true;
+  const words = text.trim().split(/\s+/).filter(w => w.length > 0);
+  if (words.length === 0) return true;
+  
+  // Single word like "Developer", "IT", "HR" are valid
+  if (words.length === 1) {
+    return words[0].length < 2 && !/^[A-Z]{2,3}$/.test(words[0]); 
+  }
+
+  // Multi-word check
+  const hasVowels = /[aeiouAEIOU]/.test(text);
+  if (!hasVowels) return true;
+
+  return false;
 }
 
 export default function App() {
@@ -149,7 +172,8 @@ export default function App() {
     phone: '',
     linkedin: '',
     github: '',
-    portfolio: '',
+    leetcode: '',
+    hackerrank: '',
     summary: '',
     role: ''
   });
@@ -182,13 +206,23 @@ export default function App() {
   const [aiPhone, setAiPhone] = React.useState('');
   const [aiLinkedin, setAiLinkedin] = React.useState('');
   const [aiGithub, setAiGithub] = React.useState('');
-  const [aiPortfolio, setAiPortfolio] = React.useState('');
+  const [aiLeetcode, setAiLeetcode] = React.useState('');
+  const [aiHackerrank, setAiHackerrank] = React.useState('');
   const [aiAdditionalInfo, setAiAdditionalInfo] = React.useState('');
   const [aiExperience, setAiExperience] = React.useState('');
   const [aiSummary, setAiSummary] = React.useState('');
   const [aiProjects, setAiProjects] = React.useState('');
   const [aiEducation, setAiEducation] = React.useState('');
+  const [aiSchool, setAiSchool] = React.useState('');
+  const [aiSchoolPercent, setAiSchoolPercent] = React.useState('');
+  const [aiInter, setAiInter] = React.useState('');
+  const [aiInterPercent, setAiInterPercent] = React.useState('');
+  const [aiDegree, setAiDegree] = React.useState('');
+  const [aiBtechPercent, setAiBtechPercent] = React.useState('');
+  const [aiProjectsInput, setAiProjectsInput] = React.useState('');
+  const [aiCertificatesInput, setAiCertificatesInput] = React.useState('');
   const [aiAchievements, setAiAchievements] = React.useState('');
+  const [aiGeneratedCertifications, setAiGeneratedCertifications] = React.useState('');
   const [isGeneratingAI, setIsGeneratingAI] = React.useState(false);
   const [generatedAIResume, setGeneratedAIResume] = React.useState<string | null>(null);
 
@@ -197,13 +231,14 @@ export default function App() {
   const [manualMatchScore, setManualMatchScore] = React.useState<number | null>(null);
 
   // --- Template Selection State ---
-  const [selectedTemplate, setSelectedTemplate] = React.useState('template1');
+  const [selectedTemplate, setSelectedTemplate] = React.useState('professional');
 
   // --- Suggested Jobs State ---
   const [suggestedJobs, setSuggestedJobs] = React.useState<string[]>([]);
 
   const [isResumeInvalid, setIsResumeInvalid] = React.useState(false);
   const [isClearModalOpen, setIsClearModalOpen] = React.useState(false);
+  const [manualErrors, setManualErrors] = React.useState<Record<string, string>>({});
   const [aiErrors, setAiErrors] = React.useState({ name: '', role: '', skills: '' });
 
   const isValidResume = formData.fullName.trim().length > 0 && formData.role.trim().length > 0;
@@ -216,7 +251,8 @@ export default function App() {
       phone: '',
       linkedin: '',
       github: '',
-      portfolio: '',
+      leetcode: '',
+      hackerrank: '',
       summary: '',
       role: ''
     });
@@ -244,25 +280,69 @@ export default function App() {
     setAiProjects('');
     setAiEducation('');
     setAiAchievements('');
+    setAiLeetcode('');
+    setAiHackerrank('');
     setGeneratedAIResume(null);
-    sessionStorage.removeItem("resumeSessionData");
+    
+    // Explicitly clear storage
     localStorage.removeItem("resumeData");
   }, []);
 
+  // Load from localStorage on mount
   React.useEffect(() => {
-    // Clear data on initial load (window.onload equivalent)
-    clearAllData();
-    
-    // Clear data before unload (window.onbeforeunload equivalent)
-    const handleBeforeUnload = () => {
-      clearAllData();
+    const saved = localStorage.getItem("resumeData");
+    if (saved) {
+      try {
+        const data = JSON.parse(saved);
+        if (data.formData) setFormData(data.formData);
+        if (data.skillCategories) setSkillCategories(data.skillCategories);
+        if (data.education) setEducation(data.education);
+        if (data.experience) setExperience(data.experience);
+        if (data.projects) setProjects(data.projects);
+        if (data.achievements) setAchievements(data.achievements);
+        if (data.customSections) setCustomSections(data.customSections);
+        if (data.certificates) setCertificates(data.certificates);
+        if (data.profilePhoto) setProfilePhoto(data.profilePhoto);
+        if (data.selectedTemplate) setSelectedTemplate(data.selectedTemplate);
+      } catch (e) {
+        console.error("Error loading saved data", e);
+      }
+    }
+  }, []);
+
+  // Save to localStorage whenever data changes
+  React.useEffect(() => {
+    const dataToSave = {
+      formData,
+      skillCategories,
+      education,
+      experience,
+      projects,
+      achievements,
+      customSections,
+      certificates,
+      profilePhoto,
+      selectedTemplate
     };
+    localStorage.setItem("resumeData", JSON.stringify(dataToSave));
+  }, [formData, skillCategories, education, experience, projects, achievements, customSections, certificates, profilePhoto, selectedTemplate]);
 
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [clearAllData]);
-
-  // --- Suggested Jobs Logic ---
+  const validateManualForm = () => {
+    const errs: Record<string, string> = {};
+    if (!formData.fullName.trim()) errs.fullName = "Full name is required";
+    if (!formData.email.trim()) errs.email = "Email is required";
+    else if (!formData.email.includes("@")) errs.email = "Invalid email format";
+    if (!formData.role.trim()) errs.role = "Job role is required";
+    
+    setManualErrors(errs);
+    if (Object.keys(errs).length > 0) {
+      const firstError = Object.keys(errs)[0];
+      const el = document.getElementsByName(firstError)[0];
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return false;
+    }
+    return true;
+  };
   React.useEffect(() => {
     const allSkills = skillCategories.flatMap(cat => cat.skills.map(s => s.name.toLowerCase())).join(' ');
     const jobs: string[] = [];
@@ -304,7 +384,7 @@ export default function App() {
     setExperience(experience.map(e => e.id === id ? { ...e, [field]: value } : e));
   };
 
-  const addProject = () => setProjects([...projects, { id: Date.now().toString(), title: '', description: '' }]);
+  const addProject = () => setProjects([...projects, { id: Date.now().toString(), title: '', tech: '', description: '' }]);
   const removeProject = (id: string) => setProjects(projects.filter(p => p.id !== id));
   const updateProject = (id: string, field: keyof Project, value: string) => {
     setProjects(projects.map(p => p.id === id ? { ...p, [field]: value } : p));
@@ -436,74 +516,38 @@ export default function App() {
 
   // --- PDF Export (Traditional Layout) ---
   const downloadAIResume = async () => {
-    const resume = document.getElementById("aiResumePreview");
-    if (!resume) return;
+    const element = document.getElementById("aiResumePreview");
+    if (!element) return;
 
     try {
-      const canvas = await html2canvas(resume, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: "#ffffff"
-      });
-      
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      
-      const imgWidth = 210;
-      const pageHeight = 297;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      
-      pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
-      
-      const fileName = `AI_Generated_${aiName.replace(/\s+/g, '_') || 'Resume'}.pdf`;
-      pdf.save(fileName);
-      
-      alert("AI Resume PDF has been generated!");
+      const opt = {
+        margin: 5,
+        filename: `AI_Generated_${aiName.replace(/\s+/g, '_') || 'Resume'}.pdf`,
+        image: { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' as const }
+      };
+
+      await html2pdf().set(opt).from(element).save();
     } catch (error) {
       console.error("Error generating AI PDF:", error);
       alert("Failed to generate PDF. Please try again.");
     }
   };
 
-  const exportToPDF = async () => {
-    const resume = document.getElementById("resumePreview");
-    const buttons = document.getElementById("actionButtons");
-    if (!resume) return;
+  const [isExporting, setIsExporting] = React.useState(false);
 
+  const exportToPDF = () => {
     try {
-      // Hide buttons during capture
-      if (buttons) buttons.style.display = "none";
-
-      const canvas = await html2canvas(resume, {
-        scale: 2, // Higher quality
-        useCORS: true,
-        logging: false,
-        backgroundColor: "#ffffff"
-      });
-      
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      
-      const imgWidth = 210; // A4 width in mm
-      const pageHeight = 297; // A4 height in mm
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      
-      pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
-      
-      const fileName = `${(previewData || formData).fullName.replace(/\s+/g, '_') || 'Resume'}.pdf`;
-      pdf.save(fileName);
-      
-      // Show buttons again
-      if (buttons) buttons.style.display = "flex";
-      
-      alert("Success! Your resume PDF has been generated via high-quality capture.");
-    } catch (error) {
-      // Ensure buttons are shown even if capture fails
-      if (buttons) buttons.style.display = "flex";
-      console.error("Error generating PDF:", error);
-      alert("Failed to generate PDF. Please try again.");
+      window.print();
+    } catch (err) {
+      console.error(err);
+      alert("Download not supported here. Use Print instead.");
     }
+  };
+
+  const handleDownload = () => {
+    window.print();
   };
 
   const downloadSimplePDF = () => {
@@ -540,14 +584,16 @@ export default function App() {
     const keywords = [
       'experience', 'education', 'skills', 'projects', 'summary', 'achievements', 
       'university', 'college', 'school', 'work', 'job', 'role', 'company', 
-      'contact', 'email', 'phone', 'linkedin', 'github', 'objective', 'profile'
+      'contact', 'email', 'phone', 'linkedin', 'github', 'objective', 'profile',
+      'developer', 'engineer', 'manager', 'analyst', 'designer', 'consultant',
+      'coordinator', 'specialist', 'technician', 'lead', 'director', 'intern'
     ];
     
-    // Check for at least 3 keywords or a minimum word count of 15
     const words = lower.split(/\W+/).filter(w => w.length > 1);
     const foundKeywords = keywords.filter(k => lower.includes(k));
     
-    return words.length >= 15 || foundKeywords.length >= 3;
+    // Stricter check: must have at least one professional keyword and enough content
+    return words.length >= 10 && foundKeywords.length >= 2;
   };
 
   const analyzeATSFromBuilder = () => {
@@ -601,10 +647,7 @@ export default function App() {
       newErrors.name = "Enter a valid name";
       hasError = true;
     }
-    if (!isValidText(aiRole) || isGibberish(aiRole)) {
-      newErrors.role = "Enter a meaningful job role";
-      hasError = true;
-    }
+    // Job role optional — no validation
     if (!isValidText(aiSkills) || isGibberish(aiSkills)) {
       newErrors.skills = "Enter valid technologies/skills";
       hasError = true;
@@ -648,15 +691,22 @@ export default function App() {
         Phone: ${aiPhone}
         LinkedIn: ${aiLinkedin}
         GitHub: ${aiGithub}
-        Portfolio: ${aiPortfolio}
+        LeetCode: ${aiLeetcode}
+        HackerRank: ${aiHackerrank}
+        School: ${aiSchool}
+        Intermediate: ${aiInter}
+        Degree: ${aiDegree}
+        Projects Input: ${aiProjectsInput}
+        Certifications Input: ${aiCertificatesInput}
         Additional Info: ${aiAdditionalInfo}
 
         Please provide the content for the following sections:
         1. Professional Summary (2-3 lines tailored to the role)
-        2. Experience (Job-based bullet points generated from skills if no experience is provided)
-        3. Projects (short impactful descriptions)
-        4. Education (omit or keep minimal if not provided)
-        5. Achievements (at least 2-3 professional bullet points)
+        2. Experience (Job-based bullet points generated from skills or info provided)
+        3. Projects (short impactful descriptions based on projects input)
+        4. Education (structured based on provided School, Inter, and Degree)
+        5. Certifications (list based on input)
+        6. Achievements (at least 2-3 professional bullet points)
 
         Format the experience, projects, and achievements as bullet points starting with "• ".
       `;
@@ -677,15 +727,16 @@ export default function App() {
               experience: { type: Type.STRING },
               projects: { type: Type.STRING },
               education: { type: Type.STRING },
+              certifications: { type: Type.STRING },
               achievements: { type: Type.STRING }
             },
-            required: ["summary", "experience", "projects", "education", "achievements"]
+            required: ["summary", "experience", "projects", "education", "certifications", "achievements"]
           }
         }
       });
 
       const data = JSON.parse(response.text || "{}");
-      const { summary, experience, projects, education, achievements } = data;
+      const { summary, experience, projects, education, certifications, achievements } = data;
 
       const resumeHtml = `
         <div class="space-y-4">
@@ -699,7 +750,8 @@ export default function App() {
               ${aiPhone ? `<div>${aiPhone}</div>` : ''}
               ${aiLinkedin ? `<div>LinkedIn</div>` : ''}
               ${aiGithub ? `<div>GitHub</div>` : ''}
-              ${aiPortfolio ? `<div>Portfolio</div>` : ''}
+              ${aiLeetcode ? `<div>LeetCode</div>` : ''}
+              ${aiHackerrank ? `<div>HackerRank</div>` : ''}
             </div>
           </div>
           <hr class="border-[#E5E5E5]">
@@ -724,9 +776,19 @@ export default function App() {
             <div class="text-sm leading-relaxed text-[#333] whitespace-pre-line">${projects}</div>
           </div>
           
+        <div class="space-y-2">
+          <h3 class="text-xs font-bold uppercase tracking-widest text-[#8E8E8E]">Education</h3>
+          <div class="text-sm text-[#333] space-y-1">
+            ${aiDegree ? `<div><strong>B.Tech / Degree:</strong> ${aiDegree} ${aiBtechPercent ? `<span class="bg-gray-100 px-2 rounded text-[10px] font-bold">(${aiBtechPercent})</span>` : ''}</div>` : ''}
+            ${aiInter ? `<div><strong>Intermediate / Polytechnic:</strong> ${aiInter} ${aiInterPercent ? `<span class="bg-gray-100 px-2 rounded text-[10px] font-bold">(${aiInterPercent})</span>` : ''}</div>` : ''}
+            ${aiSchool ? `<div><strong>High School (SSC):</strong> ${aiSchool} ${aiSchoolPercent ? `<span class="bg-gray-100 px-2 rounded text-[10px] font-bold">(${aiSchoolPercent})</span>` : ''}</div>` : ''}
+            ${(!aiDegree && !aiInter && !aiSchool) ? education : ''}
+          </div>
+        </div>
+
           <div class="space-y-2">
-            <h3 class="text-xs font-bold uppercase tracking-widest text-[#8E8E8E]">Education</h3>
-            <p class="text-sm text-[#333]">${education}</p>
+            <h3 class="text-xs font-bold uppercase tracking-widest text-[#8E8E8E]">Certifications</h3>
+            <p class="text-sm leading-relaxed text-[#333]">${certifications}</p>
           </div>
 
           <div class="space-y-2">
@@ -742,6 +804,7 @@ export default function App() {
       setAiProjects(projects);
       setAiEducation(education);
       setAiAchievements(achievements);
+      setAiGeneratedCertifications(certifications);
     } catch (error) {
       console.error("AI Generation Error:", error);
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -928,13 +991,13 @@ export default function App() {
                   </header>
 
                 {/* AI Resume Generator Section */}
-                <section className="space-y-8">
-                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] dark:border-zinc-800 pb-2">
+                <section className="space-y-8 p-1 rounded-[40px] bg-gradient-to-br from-indigo-50/50 via-white to-purple-50/50 dark:from-zinc-800/20 dark:to-transparent">
+                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] dark:border-zinc-800 pb-2 px-8">
                     <Zap size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
                     <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">AI Resume Generator</h2>
                   </div>
                   
-                  <div className="card p-8 border border-[#E5E5E5] dark:border-zinc-800 space-y-8 transition-colors">
+                  <div className="card p-8 border border-white dark:border-zinc-800 space-y-8 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm shadow-xl shadow-indigo-100/20 dark:shadow-none transition-all">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-4">
                         <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Your Name</label>
@@ -943,8 +1006,8 @@ export default function App() {
                           onChange={(e) => setAiName(e.target.value)}
                           placeholder="Full Name"
                           className={cn(
-                            "w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 outline-none transition-all text-sm dark:text-white",
-                            aiErrors.name ? "border-red-500" : "border-transparent focus:border-[#007BFF]"
+                            "w-full bg-white dark:bg-zinc-900/50 p-4 rounded-2xl border border-transparent shadow-sm focus:shadow-md focus:border-[#007BFF] outline-none transition-all text-sm dark:text-white",
+                            aiErrors.name && "border-red-500 shadow-red-50/50"
                           )}
                         />
                         {aiErrors.name && <p className="text-red-500 text-[10px] font-bold uppercase tracking-widest mt-1">{aiErrors.name}</p>}
@@ -953,24 +1016,66 @@ export default function App() {
                         <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Job Role</label>
                         <input 
                           value={aiRole}
+                          list="job-role-suggestions"
                           onChange={(e) => setAiRole(e.target.value)}
                           placeholder="Example: Frontend Developer"
                           className={cn(
-                            "w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 outline-none transition-all text-sm dark:text-white",
-                            aiErrors.role ? "border-red-500" : "border-transparent focus:border-[#007BFF]"
+                            "w-full bg-white dark:bg-zinc-900/50 p-4 rounded-2xl border border-transparent shadow-sm focus:shadow-md focus:border-[#007BFF] outline-none transition-all text-sm dark:text-white",
+                            aiErrors.role && "border-red-500 shadow-red-50/50"
                           )}
                         />
+                        <datalist id="job-role-suggestions">
+                          <option value="Frontend Developer" />
+                          <option value="Backend Developer" />
+                          <option value="Full Stack Developer" />
+                          <option value="Data Scientist" />
+                          <option value="UI/UX Designer" />
+                          <option value="Product Manager" />
+                          <option value="Software Engineer" />
+                          <option value="DevOps Engineer" />
+                          <option value="Data Analyst" />
+                          <option value="Marketing Specialist" />
+                          <option value="HR Manager" />
+                          <option value="Financial Analyst" />
+                          <option value="Java Developer" />
+                          <option value="Python Developer" />
+                          <option value="Cybersecurity Analyst" />
+                        </datalist>
                         {aiErrors.role && <p className="text-red-500 text-[10px] font-bold uppercase tracking-widest mt-1">{aiErrors.role}</p>}
                       </div>
                       <div className="space-y-4 md:col-span-2">
-                        <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Skills</label>
+                        <div className="flex justify-between items-center">
+                          <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Skills</label>
+                          <span className="text-[10px] font-mono text-[#8E8E8E] opacity-50 uppercase tracking-widest">Select relevant skills to add</span>
+                        </div>
+                        
+                        {SKILL_ROLE_MAP[aiRole] && (
+                          <div className="flex flex-wrap gap-2 mb-4 animate-in fade-in slide-in-from-top-1">
+                            {SKILL_ROLE_MAP[aiRole].map((skill, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => {
+                                  const currentSkills = aiSkills ? aiSkills.split(",").map(s => s.trim()) : [];
+                                  if (!currentSkills.includes(skill)) {
+                                    setAiSkills(aiSkills ? `${aiSkills}, ${skill}` : skill);
+                                  }
+                                }}
+                                className="px-3 py-1 bg-[#F5F5F4] dark:bg-zinc-800 border border-[#E5E5E5] dark:border-zinc-700 rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-[#1A1A1A] hover:text-white dark:hover:bg-white dark:hover:text-black transition-all"
+                              >
+                                + {skill}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
                         <textarea 
                           value={aiSkills}
                           onChange={(e) => setAiSkills(e.target.value)}
                           placeholder="HTML, CSS, JS, React..."
                           className={cn(
-                            "w-full h-24 bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 outline-none transition-all text-sm resize-none dark:text-white",
-                            aiErrors.skills ? "border-red-500" : "border-transparent focus:border-[#007BFF]"
+                            "w-full h-24 bg-white dark:bg-zinc-900/50 p-4 rounded-2xl border border-transparent shadow-sm focus:shadow-md focus:border-[#007BFF] outline-none transition-all text-sm resize-none dark:text-white",
+                            aiErrors.skills && "border-red-500 shadow-red-50/50"
                           )}
                         />
                         {aiErrors.skills && <p className="text-red-500 text-[10px] font-bold uppercase tracking-widest mt-1">{aiErrors.skills}</p>}
@@ -1012,14 +1117,91 @@ export default function App() {
                         />
                       </div>
                       <div className="space-y-4">
-                        <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Portfolio</label>
+                        <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">LeetCode</label>
                         <input 
-                          value={aiPortfolio}
-                          onChange={(e) => setAiPortfolio(e.target.value)}
-                          placeholder="Portfolio URL"
+                          value={aiLeetcode}
+                          onChange={(e) => setAiLeetcode(e.target.value)}
+                          placeholder="LeetCode URL"
                           className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 border-transparent focus:border-[#007BFF] outline-none transition-all text-sm dark:text-white"
                         />
                       </div>
+                      <div className="space-y-4">
+                        <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">HackerRank</label>
+                        <input 
+                          value={aiHackerrank}
+                          onChange={(e) => setAiHackerrank(e.target.value)}
+                          placeholder="HackerRank URL"
+                          className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 border-transparent focus:border-[#007BFF] outline-none transition-all text-sm dark:text-white"
+                        />
+                      </div>
+                      <div className="space-y-4 md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="space-y-4">
+                          <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">School (SSC)</label>
+                          <input 
+                            value={aiSchool}
+                            onChange={(e) => setAiSchool(e.target.value)}
+                            placeholder="Example: ZPHS, Hyderabad"
+                            className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 border-transparent focus:border-[#007BFF] outline-none transition-all text-sm dark:text-white mb-2"
+                          />
+                          <input 
+                            value={aiSchoolPercent}
+                            onChange={(e) => setAiSchoolPercent(e.target.value)}
+                            placeholder="Percentage (e.g. 95%)"
+                            className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-3 rounded-xl border border-transparent focus:border-[#007BFF] outline-none transition-all text-[10px] dark:text-white"
+                          />
+                        </div>
+                        <div className="space-y-4">
+                          <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Intermediate / Polytechnic</label>
+                          <input 
+                            value={aiInter}
+                            onChange={(e) => setAiInter(e.target.value)}
+                            placeholder="Example: Narayana Junior College"
+                            className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 border-transparent focus:border-[#007BFF] outline-none transition-all text-sm dark:text-white mb-2"
+                          />
+                          <input 
+                            value={aiInterPercent}
+                            onChange={(e) => setAiInterPercent(e.target.value)}
+                            placeholder="Percentage (e.g. 98%)"
+                            className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-3 rounded-xl border border-transparent focus:border-[#007BFF] outline-none transition-all text-[10px] dark:text-white"
+                          />
+                        </div>
+                        <div className="space-y-4">
+                          <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">B.Tech / Degree</label>
+                          <input 
+                            value={aiDegree}
+                            onChange={(e) => setAiDegree(e.target.value)}
+                            placeholder="Example: JNTU, Computer Science"
+                            className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 border-transparent focus:border-[#007BFF] outline-none transition-all text-sm dark:text-white mb-2"
+                          />
+                          <input 
+                            value={aiBtechPercent}
+                            onChange={(e) => setAiBtechPercent(e.target.value)}
+                            placeholder="Percentage / CGPA (e.g. 8.5)"
+                            className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-3 rounded-xl border border-transparent focus:border-[#007BFF] outline-none transition-all text-[10px] dark:text-white"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-4 md:col-span-2">
+                        <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Projects (Optional)</label>
+                        <textarea 
+                          value={aiProjectsInput}
+                          onChange={(e) => setAiProjectsInput(e.target.value)}
+                          placeholder="Briefly describe 1-2 key projects you've worked on..."
+                          className="w-full h-24 bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 border-transparent focus:border-[#007BFF] outline-none transition-all text-sm resize-none dark:text-white"
+                        />
+                      </div>
+
+                      <div className="space-y-4 md:col-span-2">
+                        <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Certifications (Optional)</label>
+                        <input 
+                          value={aiCertificatesInput}
+                          onChange={(e) => setAiCertificatesInput(e.target.value)}
+                          placeholder="Example: AWS Certified Cloud Practitioner, Java Fundamentals"
+                          className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 border-transparent focus:border-[#007BFF] outline-none transition-all text-sm dark:text-white"
+                        />
+                      </div>
+
                       <div className="space-y-4 md:col-span-2">
                         <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Additional Info / Experience Notes</label>
                         <textarea 
@@ -1072,9 +1254,15 @@ export default function App() {
                                 phone: aiPhone || formData.phone,
                                 linkedin: aiLinkedin || formData.linkedin,
                                 github: aiGithub || formData.github,
-                                portfolio: aiPortfolio || formData.portfolio,
+                                leetcode: aiLeetcode || formData.leetcode,
+                                hackerrank: aiHackerrank || formData.hackerrank,
                                 summary: aiSummary || `Motivated ${aiRole} skilled in ${aiSkills}. Passionate about delivering high-quality solutions.`
                               });
+
+                              // Add certifications
+                              if (aiGeneratedCertifications) {
+                                setCertificates(prev => [...new Set([...prev, ...aiGeneratedCertifications.split('\n').map(c => c.replace(/^•\s*/, '').trim()).filter(c => c.length > 0)])]);
+                              }
                               
                               // Add the skills to a new category
                               if (aiSkills) {
@@ -1113,7 +1301,41 @@ export default function App() {
                               }
 
                               // Add education
-                              if (aiEducation) {
+                              const newEducation: Education[] = [];
+                              if (aiDegree) {
+                                newEducation.push({
+                                  id: crypto.randomUUID(),
+                                  school: aiDegree.split(',')[0].trim(),
+                                  degree: 'B.Tech / Degree',
+                                  year: '2024',
+                                  percentage: aiBtechPercent,
+                                  description: aiDegree
+                                });
+                              }
+                              if (aiInter) {
+                                newEducation.push({
+                                  id: crypto.randomUUID(),
+                                  school: aiInter.split(',')[0].trim(),
+                                  degree: 'Intermediate / Polytechnic',
+                                  year: '2020',
+                                  percentage: aiInterPercent,
+                                  description: aiInter
+                                });
+                              }
+                              if (aiSchool) {
+                                newEducation.push({
+                                  id: crypto.randomUUID(),
+                                  school: aiSchool.split(',')[0].trim(),
+                                  degree: 'High School (SSC)',
+                                  year: '2018',
+                                  percentage: aiSchoolPercent,
+                                  description: aiSchool
+                                });
+                              }
+                              
+                              if (newEducation.length > 0) {
+                                setEducation([...newEducation, ...education]);
+                              } else if (aiEducation) {
                                 const newEdu: Education = {
                                   id: crypto.randomUUID(),
                                   school: 'University from AI Generator',
@@ -1128,20 +1350,128 @@ export default function App() {
                               if (aiAchievements) {
                                 setAchievements(prev => prev ? prev + "\n" + aiAchievements : aiAchievements);
                               }
-
-                              alert("Main builder fields have been populated with your AI-generated content!");
+                              
+                              // Stay on edit tab and scroll to manual builder
+                              const manualBuilder = document.getElementById('manual-builder');
+                              if (manualBuilder) {
+                                manualBuilder.scrollIntoView({ behavior: 'smooth' });
+                              }
                             }}
-                            className="px-6 py-3 bg-white border border-[#1A1A1A] text-[#1A1A1A] rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-[#1A1A1A] hover:text-white transition-all"
+                            className="px-8 py-4 bg-amber-500 text-white rounded-full text-[10px] font-bold uppercase tracking-widest hover:scale-105 active:scale-95 transition-all flex items-center gap-3 shadow-lg group"
                           >
-                            Use this Resume
+                            <Sparkles size={16} className="group-hover:rotate-12 transition-transform" />
+                            Apply AI & Edit Manually
                           </button>
                           <button 
                             type="button"
-                            onClick={downloadAIResume}
-                            className="px-6 py-3 bg-[#1A1A1A] text-white rounded-full text-[10px] font-bold uppercase tracking-widest hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
+                            onClick={() => {
+                              // Save AI data
+                              setFormData({
+                                ...formData,
+                                fullName: aiName,
+                                role: aiRole,
+                                email: aiEmail || formData.email,
+                                phone: aiPhone || formData.phone,
+                                linkedin: aiLinkedin || formData.linkedin,
+                                github: aiGithub || formData.github,
+                                leetcode: aiLeetcode || formData.leetcode,
+                                hackerrank: aiHackerrank || formData.hackerrank,
+                                summary: aiSummary || `Motivated ${aiRole} skilled in ${aiSkills}. Passionate about delivering high-quality solutions.`
+                              });
+
+                              if (aiGeneratedCertifications) {
+                                setCertificates(prev => [...new Set([...prev, ...aiGeneratedCertifications.split('\n').map(c => c.replace(/^•\s*/, '').trim()).filter(c => c.length > 0)])]);
+                              }
+                              
+                              if (aiSkills) {
+                                const newCat: SkillCategory = {
+                                  id: crypto.randomUUID(),
+                                  name: 'AI Generated Skills',
+                                  skills: aiSkills.split(',').map(s => ({
+                                    id: crypto.randomUUID(),
+                                    name: s.trim(),
+                                    icon: 'Code'
+                                  }))
+                                };
+                                setSkillCategories([newCat, ...skillCategories]);
+                              }
+
+                              if (aiExperience) {
+                                const newExp: Experience = {
+                                  id: crypto.randomUUID(),
+                                  role: aiRole,
+                                  company: 'Experience from AI Generator',
+                                  duration: 'Present',
+                                  description: aiExperience
+                                };
+                                setExperience([newExp, ...experience]);
+                              }
+
+                              if (aiProjects) {
+                                const newProj: Project = {
+                                  id: crypto.randomUUID(),
+                                  title: 'Project from AI Generator',
+                                  description: aiProjects
+                                };
+                                setProjects([newProj, ...projects]);
+                              }
+
+                              const newEducation: Education[] = [];
+                              if (aiDegree) {
+                                newEducation.push({
+                                  id: crypto.randomUUID(),
+                                  school: aiDegree.split(',')[0].trim(),
+                                  degree: 'B.Tech / Degree',
+                                  year: '2024',
+                                  percentage: aiBtechPercent,
+                                  description: aiDegree
+                                });
+                              }
+                              if (aiInter) {
+                                newEducation.push({
+                                  id: crypto.randomUUID(),
+                                  school: aiInter.split(',')[0].trim(),
+                                  degree: 'Intermediate / Polytechnic',
+                                  year: '2020',
+                                  percentage: aiInterPercent,
+                                  description: aiInter
+                                });
+                              }
+                              if (aiSchool) {
+                                newEducation.push({
+                                  id: crypto.randomUUID(),
+                                  school: aiSchool.split(',')[0].trim(),
+                                  degree: 'High School (SSC)',
+                                  year: '2018',
+                                  percentage: aiSchoolPercent,
+                                  description: aiSchool
+                                });
+                              }
+                              
+                              if (newEducation.length > 0) {
+                                setEducation([...newEducation, ...education]);
+                              } else if (aiEducation) {
+                                const newEdu: Education = {
+                                  id: crypto.randomUUID(),
+                                  school: 'University from AI Generator',
+                                  degree: aiEducation,
+                                  year: '2024',
+                                  description: 'Completed with honors'
+                                };
+                                setEducation([newEdu, ...education]);
+                              }
+
+                              if (aiAchievements) {
+                                setAchievements(prev => prev ? prev + "\n" + aiAchievements : aiAchievements);
+                              }
+                              
+                              setActiveTab('preview');
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }}
+                            className="px-8 py-4 bg-[#1A1A1A] text-white rounded-full text-[10px] font-bold uppercase tracking-widest hover:scale-105 active:scale-95 transition-all flex items-center gap-3 shadow-lg group"
                           >
-                            <Download size={14} />
-                            Download Resume
+                            <FileText size={16} className="group-hover:rotate-12 transition-transform" />
+                            Go to Preview
                           </button>
                         </div>
                       </div>
@@ -1149,526 +1479,296 @@ export default function App() {
                   </div>
                 </section>
 
-                {/* Personal Details */}
-                <section className="space-y-6">
-                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] dark:border-zinc-800 pb-2">
-                    <User size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
-                    <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">Personal Details</h2>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="space-y-1">
-                        <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Full Name</label>
-                        <input 
-                          name="fullName"
-                          value={formData.fullName}
-                          onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                          placeholder="Jane Doe"
-                          autoComplete="off"
-                          className="w-full bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-2 focus:border-[#007BFF] outline-none transition-colors text-lg dark:text-white"
-                        />
-                      </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Job Role</label>
-                      <input 
-                        name="role"
-                        value={formData.role}
-                        onChange={handleInputChange}
-                        placeholder="Frontend Developer"
-                        autoComplete="off"
-                        className="w-full bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-2 focus:border-[#007BFF] outline-none transition-colors text-lg dark:text-white"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Email Address</label>
-                      <input 
-                        name="email"
-                        value={formData.email}
-                        onChange={handleInputChange}
-                        placeholder="jane@example.com"
-                        autoComplete="off"
-                        className="w-full bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-2 focus:border-[#007BFF] outline-none transition-colors text-lg dark:text-white"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Phone Number</label>
-                      <input 
-                        name="phone"
-                        value={formData.phone}
-                        onChange={handleInputChange}
-                        placeholder="+1 234 567 890"
-                        autoComplete="off"
-                        className="w-full bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-2 focus:border-[#007BFF] outline-none transition-colors text-lg dark:text-white"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">LinkedIn URL</label>
-                      <input 
-                        name="linkedin"
-                        value={formData.linkedin}
-                        onChange={handleInputChange}
-                        placeholder="linkedin.com/in/janedoe"
-                        autoComplete="off"
-                        className="w-full bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-2 focus:border-[#007BFF] outline-none transition-colors text-lg dark:text-white"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">GitHub URL</label>
-                      <input 
-                        name="github"
-                        value={formData.github}
-                        onChange={handleInputChange}
-                        placeholder="github.com/janedoe"
-                        autoComplete="off"
-                        className="w-full bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-2 focus:border-[#007BFF] outline-none transition-colors text-lg dark:text-white"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Portfolio URL</label>
-                      <input 
-                        name="portfolio"
-                        value={formData.portfolio}
-                        onChange={handleInputChange}
-                        placeholder="portfolio.com"
-                        autoComplete="off"
-                        className="w-full bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-2 focus:border-[#007BFF] outline-none transition-colors text-lg dark:text-white"
-                      />
-                    </div>
-                  </div>
-                </section>
-
-                {/* Profile Photo */}
-                <section className="space-y-6">
-                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] dark:border-zinc-800 pb-2">
-                    <User size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
-                    <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">Profile Photo</h2>
-                  </div>
-                  <div className="flex items-center gap-8">
-                    <div className="w-24 h-24 rounded-full bg-[#F5F5F4] dark:bg-zinc-800 border-2 border-dashed border-[#E5E5E5] dark:border-zinc-700 flex items-center justify-center overflow-hidden transition-colors">
-                      {profilePhoto ? (
-                        <img src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
-                      ) : (
-                        <User size={32} className="text-[#E5E5E5] dark:text-zinc-600" />
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            if (file.size > 80 * 1024 * 1024) {
-                              alert("File size exceeds 80MB limit.");
-                              return;
-                            }
-                            const reader = new FileReader();
-                            reader.onload = (ev) => setProfilePhoto(ev.target?.result as string);
-                            reader.readAsDataURL(file);
-                          }
-                        }}
-                        className="text-xs text-[#8E8E8E] file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-[#1A1A1A] file:text-white hover:file:bg-[#333] transition-all"
-                      />
-                      <p className="text-[10px] text-[#8E8E8E] mt-2 font-mono uppercase tracking-widest">Recommended: Square image, max 80MB</p>
-                    </div>
-                  </div>
-                </section>
-
-                {/* Summary */}
-                <section className="space-y-6">
-                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] pb-2">
-                    <Sparkles size={16} className="text-[#8E8E8E]" />
-                    <h2 className="text-xs font-bold uppercase tracking-widest">Professional Summary</h2>
-                  </div>
-                  <textarea 
-                    name="summary"
-                    value={formData.summary}
-                    onChange={handleInputChange}
-                    placeholder="Briefly describe your career goals and key achievements..."
-                    className="w-full bg-white border border-[#E5E5E5] p-4 rounded-lg focus:border-[#1A1A1A] outline-none transition-colors min-h-[120px] text-sm leading-relaxed"
-                  />
-                </section>
-
-                {/* Achievements */}
-                <section className="space-y-6">
-                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] pb-2">
-                    <CheckCircle2 size={16} className="text-[#8E8E8E]" />
-                    <h2 className="text-xs font-bold uppercase tracking-widest">Achievements</h2>
-                  </div>
-                  <textarea 
-                    value={achievements}
-                    onChange={e => setAchievements(e.target.value)}
-                    placeholder="List your key achievements (one per sentence)..."
-                    className="w-full bg-white border border-[#E5E5E5] p-4 rounded-lg focus:border-[#1A1A1A] outline-none transition-colors min-h-[100px] text-sm leading-relaxed"
-                  />
-                </section>
-
-                {/* Experience */}
-                <section className="space-y-6">
-                  <div className="flex items-center justify-between border-b border-[#E5E5E5] dark:border-zinc-800 pb-2">
+                {/* Manual Resume Builder Section */}
+                <section id="manual-builder" className="space-y-12 mt-20 pt-12 border-t border-[#E5E5E5] dark:border-zinc-800">
+                  <div className="flex items-center justify-between px-8">
                     <div className="flex items-center gap-4">
-                      <Briefcase size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
-                      <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">Experience</h2>
+                      <User size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
+                      <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">Manual Resume Builder</h2>
                     </div>
-                    <button onClick={addExperience} className="text-[10px] uppercase tracking-widest font-bold flex items-center gap-1 hover:text-[#8E8E8E] dark:hover:text-zinc-400 transition-colors dark:text-zinc-500">
-                      <Plus size={12} /> Add
+                    <button 
+                      onClick={() => setIsClearModalOpen(true)}
+                      className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-red-500 hover:text-red-600 transition-colors"
+                    >
+                      <Trash2 size={14} />
+                      Clear All
                     </button>
                   </div>
-                  <div className="space-y-8">
-                    {experience.map((exp) => (
-                      <div key={exp.id} className="relative group card p-6 border border-[#E5E5E5] dark:border-zinc-800 hover:shadow-xl hover:shadow-black/5 transition-all">
-                        <button 
-                          onClick={() => removeExperience(exp.id)}
-                          className="absolute top-4 right-4 text-[#E5E5E5] dark:text-zinc-700 hover:text-red-500 transition-colors"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+
+                  {/* Personal Information */}
+                  <div className="card p-8 border border-[#E5E5E5] dark:border-zinc-800 space-y-8 bg-white dark:bg-zinc-900 shadow-sm transition-all">
+                    <h3 className="text-sm font-bold uppercase tracking-widest flex items-center gap-3 dark:text-white">
+                      <User size={16} className="text-blue-500" />
+                      Personal Information
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {[
+                        { label: 'Full Name', name: 'fullName', placeholder: 'John Doe' },
+                        { label: 'Job Title', name: 'role', placeholder: 'Software Engineer' },
+                        { label: 'Email', name: 'email', placeholder: 'john@example.com' },
+                        { label: 'Phone', name: 'phone', placeholder: '+1 234 567 890' },
+                        { label: 'LinkedIn', name: 'linkedin', placeholder: 'linkedin.com/in/...' },
+                        { label: 'GitHub', name: 'github', placeholder: 'github.com/...' },
+                        { label: 'LeetCode', name: 'leetcode', placeholder: 'leetcode.com/...' },
+                        { label: 'HackerRank', name: 'hackerrank', placeholder: 'hackerrank.com/...' },
+                      ].map(field => (
+                        <div key={field.name} className="space-y-2">
+                          <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">{field.label}</label>
                           <input 
-                            value={exp.company}
-                            onChange={e => updateExperience(exp.id, 'company', e.target.value)}
-                            placeholder="Company Name"
-                            autoComplete="off"
-                            className="bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-1 focus:border-[#007BFF] outline-none text-sm font-bold dark:text-white"
+                            name={field.name}
+                            value={(formData as any)[field.name]}
+                            onChange={handleInputChange}
+                            placeholder={field.placeholder}
+                            className={cn(
+                              "w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 border-transparent focus:border-[#007BFF] outline-none transition-all text-sm dark:text-white",
+                              manualErrors[field.name] && "border-red-500 bg-red-50/50 dark:bg-red-500/5 shadow-[0_0_0_1px_rgba(239,68,68,0.5)]"
+                            )}
                           />
-                          <input 
-                            value={exp.role}
-                            onChange={e => updateExperience(exp.id, 'role', e.target.value)}
-                            placeholder="Job Title"
-                            autoComplete="off"
-                            className="bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-1 focus:border-[#007BFF] outline-none text-sm dark:text-white"
-                          />
-                          <input 
-                            value={exp.duration}
-                            onChange={e => updateExperience(exp.id, 'duration', e.target.value)}
-                            placeholder="Duration (e.g. 2020 - Present)"
-                            autoComplete="off"
-                            className="bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-1 focus:border-[#007BFF] outline-none text-xs font-mono dark:text-zinc-400"
-                          />
+                          {manualErrors[field.name] && <p className="text-[10px] text-red-500 font-bold mt-1 ml-2 uppercase tracking-tight">{manualErrors[field.name]}</p>}
                         </div>
-                        <textarea 
-                          value={exp.description}
-                          onChange={e => updateExperience(exp.id, 'description', e.target.value)}
-                          placeholder="Describe your responsibilities and achievements..."
-                          className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-3 rounded-lg text-xs min-h-[80px] outline-none focus:ring-1 focus:ring-[#1A1A1A] dark:focus:ring-white dark:text-white transition-colors"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                {/* Education */}
-                <section className="space-y-6">
-                  <div className="flex items-center justify-between border-b border-[#E5E5E5] dark:border-zinc-800 pb-2">
-                    <div className="flex items-center gap-4">
-                      <GraduationCap size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
-                      <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">Education</h2>
-                    </div>
-                    <button onClick={addEducation} className="text-[10px] uppercase tracking-widest font-bold flex items-center gap-1 hover:text-[#8E8E8E] dark:hover:text-zinc-400 transition-colors dark:text-zinc-500">
-                      <Plus size={12} /> Add
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {education.map((edu) => (
-                      <div key={edu.id} className="card p-6 border border-[#E5E5E5] dark:border-zinc-800 relative transition-colors">
-                        <button 
-                          onClick={() => removeEducation(edu.id)}
-                          className="absolute top-4 right-4 text-[#E5E5E5] dark:text-zinc-700 hover:text-red-500 transition-colors"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                        <input 
-                          value={edu.school}
-                          onChange={e => updateEducation(edu.id, 'school', e.target.value)}
-                          placeholder="University Name"
-                          autoComplete="off"
-                          className="w-full bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-1 mb-3 focus:border-[#007BFF] outline-none text-sm font-bold dark:text-white"
-                        />
-                        <div className="flex gap-4 mb-3">
-                          <input 
-                            value={edu.degree}
-                            onChange={e => updateEducation(edu.id, 'degree', e.target.value)}
-                            placeholder="Degree"
-                            autoComplete="off"
-                            className="flex-1 bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-1 focus:border-[#007BFF] outline-none text-xs dark:text-white"
-                          />
-                          <input 
-                            value={edu.year}
-                            onChange={e => updateEducation(edu.id, 'year', e.target.value)}
-                            placeholder="Year"
-                            autoComplete="off"
-                            className="w-20 bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-1 focus:border-[#007BFF] outline-none text-xs font-mono dark:text-zinc-400"
-                          />
-                        </div>
-                        <textarea 
-                          value={edu.description}
-                          onChange={e => updateEducation(edu.id, 'description', e.target.value)}
-                          placeholder="Highlights (e.g. GPA, relevant courses...)"
-                          className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-3 rounded-lg text-xs min-h-[60px] outline-none focus:ring-1 focus:ring-[#1A1A1A] dark:focus:ring-white dark:text-white transition-colors"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                {/* Academic Performance */}
-                <section className="space-y-6">
-                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] dark:border-zinc-800 pb-2">
-                    <GraduationCap size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
-                    <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">Academic Performance</h2>
-                  </div>
-                  <div className="space-y-4">
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Academic Details</label>
-                      <textarea 
-                        value={academicDetails}
-                        onChange={e => setAcademicDetails(e.target.value)}
-                        placeholder="List academic highlights (one per sentence)..."
-                        className="w-full bg-white dark:bg-zinc-900 border border-[#E5E5E5] dark:border-zinc-800 p-4 rounded-lg focus:border-[#1A1A1A] dark:focus:border-white outline-none transition-colors min-h-[100px] text-sm leading-relaxed dark:text-white"
-                      />
+                      ))}
                     </div>
                   </div>
-                </section>
 
-                {/* Projects */}
-                <section className="space-y-6">
-                  <div className="flex items-center justify-between border-b border-[#E5E5E5] dark:border-zinc-800 pb-2">
-                    <div className="flex items-center gap-4">
-                      <FileText size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
-                      <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">Projects</h2>
-                    </div>
-                    <button onClick={addProject} className="text-[10px] uppercase tracking-widest font-bold flex items-center gap-1 hover:text-[#8E8E8E] dark:hover:text-zinc-400 transition-colors dark:text-zinc-500">
-                      <Plus size={12} /> Add
-                    </button>
-                  </div>
-                  <div className="space-y-8">
-                    {projects.map((proj) => (
-                      <div key={proj.id} className="relative group card p-6 border border-[#E5E5E5] dark:border-zinc-800 hover:shadow-xl hover:shadow-black/5 transition-all">
-                        <button 
-                          onClick={() => removeProject(proj.id)}
-                          className="absolute top-4 right-4 text-[#E5E5E5] dark:text-zinc-700 hover:text-red-500 transition-colors"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                        <input 
-                          value={proj.title}
-                          onChange={e => updateProject(proj.id, 'title', e.target.value)}
-                          placeholder="Project Title"
-                          autoComplete="off"
-                          className="w-full bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-1 mb-4 focus:border-[#007BFF] outline-none text-sm font-bold dark:text-white"
-                        />
-                        <textarea 
-                          value={proj.description}
-                          onChange={e => updateProject(proj.id, 'description', e.target.value)}
-                          placeholder="Describe your project..."
-                          className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-3 rounded-lg text-xs min-h-[80px] outline-none focus:ring-1 focus:ring-[#1A1A1A] dark:focus:ring-white dark:text-white transition-colors"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                {/* Certificates */}
-                <section className="space-y-6">
-                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] dark:border-zinc-800 pb-2">
-                    <Shield size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
-                    <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">Certificates</h2>
-                  </div>
-                  <div className="space-y-4">
-                    <input 
-                      type="file" 
-                      multiple 
-                      accept=".pdf,.png,.jpeg,.doc,.docx"
-                      onChange={(e) => {
-                        const files = Array.from(e.target.files || []);
-                        const validFiles = files.filter((f: any) => f.size <= 80 * 1024 * 1024);
-                        if (validFiles.length < files.length) {
-                          alert("Some files were skipped because they exceed the 80MB limit.");
-                        }
-                        const filteredFiles = validFiles.filter((f: any) => !f.name.toLowerCase().endsWith('.jpg'));
-                        const fileNames = filteredFiles.map((f: any) => f.name);
-                        setCertificates(prev => [...prev, ...fileNames]);
-                      }}
-                      className="text-xs text-[#8E8E8E] dark:text-zinc-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-[#1A1A1A] dark:file:bg-white file:text-white dark:file:text-black hover:file:bg-[#333] dark:hover:file:bg-zinc-200 transition-all"
+                  {/* Professional Summary */}
+                  <div className="card p-8 border border-[#E5E5E5] dark:border-zinc-800 space-y-4 bg-white dark:bg-zinc-900 shadow-sm transition-all">
+                    <h3 className="text-sm font-bold uppercase tracking-widest flex items-center gap-3 dark:text-white">
+                      <Sparkles size={16} className="text-amber-500" />
+                      Professional Summary
+                    </h3>
+                    <textarea 
+                      name="summary" 
+                      value={formData.summary} 
+                      onChange={handleInputChange} 
+                      placeholder="Write a compelling professional summary..." 
+                      className="w-full h-32 bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 border-transparent focus:border-[#007BFF] outline-none transition-all text-sm resize-none dark:text-white" 
                     />
-                    <p className="text-[10px] text-[#8E8E8E] dark:text-zinc-500 mt-2 font-mono uppercase tracking-widest">Supported formats: PDF, PNG, JPEG (JPG not allowed), max 80MB per file</p>
-                    <div className="flex flex-wrap gap-2">
-                      {certificates.map((cert, idx) => (
-                        <div key={idx} className="bg-[#F5F5F4] dark:bg-zinc-800 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 dark:text-white transition-colors">
-                          {cert}
-                          <button onClick={() => setCertificates(prev => prev.filter((_, i) => i !== idx))} className="text-red-500 hover:text-red-700">
-                            <Plus size={12} className="rotate-45" />
+                  </div>
+
+                  {/* Experience Section */}
+                  <div className="card p-8 border border-[#E5E5E5] dark:border-zinc-800 space-y-8 bg-white dark:bg-zinc-900 shadow-sm transition-all">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-sm font-bold uppercase tracking-widest flex items-center gap-3 dark:text-white">
+                        <Briefcase size={16} className="text-blue-500" />
+                        Professional Experience
+                      </h3>
+                      <button type="button" onClick={addExperience} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all">
+                        <Plus size={16} className="text-zinc-600 dark:text-zinc-400" />
+                      </button>
+                    </div>
+                    
+                    <div className="space-y-12">
+                      {experience.map((exp) => (
+                        <motion.div key={exp.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="relative grid grid-cols-1 md:grid-cols-2 gap-6 p-6 border border-zinc-100 dark:border-zinc-800 rounded-[32px]">
+                          <button type="button" onClick={() => removeExperience(exp.id)} className="absolute -top-3 -right-3 w-8 h-8 bg-red-50 dark:bg-red-500/10 text-red-500 rounded-full flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-500/20 transition-all">
+                            <Trash2 size={14} />
                           </button>
+                          <div className="space-y-2">
+                            <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Role</label>
+                            <input value={exp.role} onChange={(e) => updateExperience(exp.id, 'role', e.target.value)} placeholder="Senior Developer" className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none text-sm dark:text-white" />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Company</label>
+                            <input value={exp.company} onChange={(e) => updateExperience(exp.id, 'company', e.target.value)} placeholder="Tech Corp" className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none text-sm dark:text-white" />
+                          </div>
+                          <div className="space-y-2 md:col-span-2">
+                            <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Duration</label>
+                            <input value={exp.duration} onChange={(e) => updateExperience(exp.id, 'duration', e.target.value)} placeholder="2020 - Present" className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none text-sm dark:text-white" />
+                          </div>
+                          <div className="space-y-2 md:col-span-2">
+                            <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Responsibilities</label>
+                            <textarea value={exp.description} onChange={(e) => updateExperience(exp.id, 'description', e.target.value)} placeholder="What did you achieve? Use bullet points..." className="w-full h-32 bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none resize-none text-sm dark:text-white" />
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Education Section */}
+                  <div className="card p-8 border border-[#E5E5E5] dark:border-zinc-800 space-y-8 bg-white dark:bg-zinc-900 shadow-sm transition-all">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-sm font-bold uppercase tracking-widest flex items-center gap-3 dark:text-white">
+                        <GraduationCap size={16} className="text-blue-500" />
+                        Education
+                      </h3>
+                      <button type="button" onClick={addEducation} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all">
+                        <Plus size={16} className="text-zinc-600 dark:text-zinc-400" />
+                      </button>
+                    </div>
+                    
+                    <div className="space-y-12">
+                      {education.map((edu) => (
+                        <motion.div key={edu.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="relative grid grid-cols-1 md:grid-cols-2 gap-6 p-6 border border-zinc-100 dark:border-zinc-800 rounded-[32px]">
+                          <button type="button" onClick={() => removeEducation(edu.id)} className="absolute -top-3 -right-3 w-8 h-8 bg-red-50 dark:bg-red-500/10 text-red-500 rounded-full flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-500/20 transition-all">
+                            <Trash2 size={14} />
+                          </button>
+                          <div className="space-y-2">
+                            <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Degree</label>
+                            <input value={edu.degree} onChange={(e) => updateEducation(edu.id, 'degree', e.target.value)} placeholder="B.Tech Computer Science" className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none text-sm dark:text-white" />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">College / University</label>
+                            <input value={edu.school} onChange={(e) => updateEducation(edu.id, 'school', e.target.value)} placeholder="MIT / Stanford / etc." className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none text-sm dark:text-white" />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Year</label>
+                            <input value={edu.year} onChange={(e) => updateEducation(edu.id, 'year', e.target.value)} placeholder="2024" className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none text-sm dark:text-white" />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Percentage / CGPA</label>
+                            <input value={edu.percentage || ''} onChange={(e) => updateEducation(edu.id, 'percentage', e.target.value)} placeholder="8.5 CGPA" className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none text-sm dark:text-white" />
+                          </div>
+                          <div className="space-y-2 md:col-span-2">
+                            <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Description</label>
+                            <textarea value={edu.description} onChange={(e) => updateEducation(edu.id, 'description', e.target.value)} placeholder="Major subjects, achievements..." className="w-full h-24 bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none resize-none text-sm dark:text-white" />
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Skills Section */}
+                  <div className="card p-8 border border-[#E5E5E5] dark:border-zinc-800 space-y-8 bg-white dark:bg-zinc-900 shadow-sm transition-all">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-sm font-bold uppercase tracking-widest flex items-center gap-3 dark:text-white">
+                        <Wrench size={16} className="text-blue-500" />
+                        Skills Categories
+                      </h3>
+                      <button type="button" onClick={addSkillCategory} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all">
+                        <Plus size={16} className="text-zinc-600 dark:text-zinc-400" />
+                      </button>
+                    </div>
+                    
+                    <div className="space-y-8">
+                      {skillCategories.map((category) => (
+                        <div key={category.id} className="p-6 border border-zinc-100 dark:border-zinc-800 rounded-[32px] space-y-6">
+                          <div className="flex gap-4">
+                            <input value={category.name} onChange={(e) => updateSkillCategoryName(category.id, e.target.value)} placeholder="Category (e.g. Frontend)" className="flex-1 bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none font-bold text-sm dark:text-white" />
+                            <button type="button" onClick={() => removeSkillCategory(category.id)} className="p-4 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-2xl transition-all">
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                          <div className="flex flex-wrap gap-4 px-2">
+                            {category.skills.map(skill => (
+                              <div key={skill.id} className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 px-4 py-2 rounded-full group">
+                                <input value={skill.name} onChange={(e) => updateSkill(category.id, skill.id, 'name', e.target.value)} placeholder="Skill name" className="bg-transparent outline-none text-xs w-24 text-zinc-900 dark:text-white" />
+                                <button type="button" onClick={() => removeSkillFromCategory(category.id, skill.id)} className="opacity-0 group-hover:opacity-100 text-red-500 transition-all">
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            ))}
+                            <button type="button" onClick={() => addSkillToCategory(category.id)} className="px-4 py-2 border-2 border-dashed border-zinc-200 dark:border-zinc-700 rounded-full text-zinc-400 hover:border-zinc-400 dark:hover:border-zinc-500 transition-all">
+                              <Plus size={14} />
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
                   </div>
-                </section>
 
-                {/* Skills */}
-                <section className="space-y-6">
-                  <div className="flex items-center justify-between border-b border-[#E5E5E5] dark:border-zinc-800 pb-2">
-                    <div className="flex items-center gap-4">
-                      <Wrench size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
-                      <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">Technical Skills</h2>
+                  {/* Projects Section */}
+                  <div className="card p-8 border border-[#E5E5E5] dark:border-zinc-800 space-y-8 bg-white dark:bg-zinc-900 shadow-sm transition-all">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-sm font-bold uppercase tracking-widest flex items-center gap-3 dark:text-white">
+                        <Terminal size={16} className="text-blue-500" />
+                        Projects
+                      </h3>
+                      <button type="button" onClick={addProject} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all">
+                        <Plus size={16} className="text-zinc-600 dark:text-zinc-400" />
+                      </button>
                     </div>
-                    <button onClick={addSkillCategory} className="text-[10px] uppercase tracking-widest font-bold flex items-center gap-1 hover:text-[#8E8E8E] dark:hover:text-zinc-400 transition-colors dark:text-zinc-500">
-                      <Plus size={12} /> Add Category
-                    </button>
-                  </div>
-                  <div className="space-y-6">
-                    {skillCategories.map((cat) => (
-                      <div key={cat.id} className="card p-6 border border-[#E5E5E5] dark:border-zinc-800 space-y-4 transition-colors">
-                        <div className="flex items-center justify-between gap-4">
-                          <input 
-                            value={cat.name}
-                            onChange={e => updateSkillCategoryName(cat.id, e.target.value)}
-                            placeholder="Category (e.g. Languages)"
-                            autoComplete="off"
-                            className="bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-1 focus:border-[#007BFF] outline-none text-sm font-bold flex-1 dark:text-white"
-                          />
-                          <button 
-                            onClick={() => removeSkillCategory(cat.id)}
-                            className="text-[#E5E5E5] dark:text-zinc-700 hover:text-red-500 transition-colors"
-                          >
+                    
+                    <div className="space-y-12">
+                      {projects.map((proj) => (
+                        <motion.div key={proj.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="relative grid grid-cols-1 gap-6 p-6 border border-zinc-100 dark:border-zinc-800 rounded-[32px]">
+                          <button type="button" onClick={() => removeProject(proj.id)} className="absolute -top-3 -right-3 w-8 h-8 bg-red-50 dark:bg-red-500/10 text-red-500 rounded-full flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-500/20 transition-all">
                             <Trash2 size={14} />
                           </button>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {cat.skills.map((skill) => (
-                            <div key={skill.id} className="flex items-center gap-2 bg-[#F5F5F4] dark:bg-zinc-800 p-2 rounded-xl group/skill transition-colors">
-                              <div className="relative group/icon">
-                                <button className="w-8 h-8 flex items-center justify-center bg-white dark:bg-zinc-900 rounded-lg border border-[#E5E5E5] dark:border-zinc-700 hover:border-[#1A1A1A] dark:hover:border-white transition-colors">
-                                  {React.createElement(getIconComponent(skill.icon), { size: 14, className: "dark:text-zinc-400" })}
-                                </button>
-                                <div className="absolute top-full left-0 mt-2 bg-white dark:bg-zinc-900 border border-[#E5E5E5] dark:border-zinc-800 rounded-xl shadow-xl p-2 hidden group-focus-within/icon:grid grid-cols-5 gap-1 z-50 w-[200px]">
-                                  {ICON_OPTIONS.map((opt) => (
-                                    <button 
-                                      key={opt.name}
-                                      onClick={() => updateSkill(cat.id, skill.id, 'icon', opt.name)}
-                                      className={cn(
-                                        "w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#F5F5F4] dark:hover:bg-zinc-800 transition-colors",
-                                        skill.icon === opt.name && "bg-[#1A1A1A] dark:bg-white text-white dark:text-black"
-                                      )}
-                                    >
-                                      <opt.icon size={14} />
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                              <input 
-                                value={skill.name}
-                                onChange={e => updateSkill(cat.id, skill.id, 'name', e.target.value)}
-                                placeholder="Skill"
-                                autoComplete="off"
-                                className="bg-transparent border-none outline-none text-xs flex-1 dark:text-white"
-                              />
-                              <button 
-                                onClick={() => removeSkillFromCategory(cat.id, skill.id)}
-                                className="text-[#E5E5E5] dark:text-zinc-700 hover:text-red-500 transition-colors opacity-0 group-hover/skill:opacity-100"
-                              >
-                                <Trash2 size={12} />
-                              </button>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="space-y-2">
+                              <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Project Title</label>
+                              <input value={proj.title} onChange={(e) => updateProject(proj.id, 'title', e.target.value)} placeholder="E-commerce Platform" className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none text-sm dark:text-white" />
                             </div>
-                          ))}
-                          <button 
-                            onClick={() => addSkillToCategory(cat.id)}
-                            className="flex items-center justify-center gap-2 border-2 border-dashed border-[#E5E5E5] dark:border-zinc-800 rounded-xl py-2 text-[10px] uppercase tracking-widest font-bold text-[#8E8E8E] dark:text-zinc-500 hover:border-[#1A1A1A] dark:hover:border-white hover:text-[#1A1A1A] dark:hover:text-white transition-all"
-                          >
-                            <Plus size={12} /> Add Skill
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                {/* Custom Sections */}
-                <section className="space-y-6">
-                  <div className="flex items-center justify-between border-b border-[#E5E5E5] dark:border-zinc-800 pb-2">
-                    <div className="flex items-center gap-4">
-                      <Plus size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
-                      <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">Custom Sections</h2>
+                            <div className="space-y-2">
+                              <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Technologies Used</label>
+                              <input value={proj.tech || ''} onChange={(e) => updateProject(proj.id, 'tech', e.target.value)} placeholder="React, Node.js, Tailwind" className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none text-sm dark:text-white" />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Description</label>
+                            <textarea value={proj.description} onChange={(e) => updateProject(proj.id, 'description', e.target.value)} placeholder="What did you build? Tools used?" className="w-full h-32 bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none resize-none text-sm dark:text-white" />
+                          </div>
+                        </motion.div>
+                      ))}
                     </div>
-                    <button onClick={addCustomSection} className="text-[10px] uppercase tracking-widest font-bold flex items-center gap-1 hover:text-[#8E8E8E] dark:hover:text-zinc-400 transition-colors dark:text-zinc-500">
-                      <Plus size={12} /> Add Section
-                    </button>
                   </div>
-                  <div className="space-y-8">
-                    {customSections.map((section) => (
-                      <div key={section.id} className="relative group card p-6 border border-[#E5E5E5] dark:border-zinc-800 hover:shadow-xl hover:shadow-black/5 transition-all">
-                        <button 
-                          onClick={() => removeCustomSection(section.id)}
-                          className="absolute top-4 right-4 text-[#E5E5E5] dark:text-zinc-700 hover:text-red-500 transition-colors"
-                        >
+
+                  {/* Certifications Section */}
+                  <div className="card p-8 border border-[#E5E5E5] dark:border-zinc-800 space-y-8 bg-white dark:bg-zinc-900 shadow-sm transition-all">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-sm font-bold uppercase tracking-widest flex items-center gap-3 dark:text-white">
+                        <CheckCircle2 size={16} className="text-blue-500" />
+                        Certifications
+                      </h3>
+                    </div>
+                    <div className="space-y-4">
+                      <textarea 
+                        value={certificates.join('\n')}
+                        onChange={(e) => setCertificates(e.target.value.split('\n'))}
+                        placeholder="AWS Certified Solutions Architect&#10;Google Cloud Professional Developer"
+                        className="w-full h-32 bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 border-transparent focus:border-[#007BFF] outline-none transition-all text-sm resize-none dark:text-white"
+                      />
+                      <p className="text-[10px] text-zinc-400 font-mono text-center">Enter one certification per line</p>
+                    </div>
+                  </div>
+
+                  {/* Custom Sections */}
+                  {customSections.map((section) => (
+                    <div key={section.id} className="card p-8 border border-[#E5E5E5] dark:border-zinc-800 space-y-8 bg-white dark:bg-zinc-900 shadow-sm transition-all">
+                      <div className="flex justify-between items-center">
+                        <h3 className="text-sm font-bold uppercase tracking-widest flex items-center gap-3 dark:text-white">
+                          <Layers size={16} className="text-purple-500" />
+                          {section.title || "Custom Section"}
+                        </h3>
+                        <button type="button" onClick={() => removeCustomSection(section.id)} className="p-2 bg-red-50 dark:bg-red-500/10 text-red-500 rounded-lg hover:bg-red-100 dark:hover:bg-red-500/20 transition-all">
                           <Trash2 size={16} />
                         </button>
-                        <input 
-                          value={section.title}
-                          onChange={e => updateCustomSection(section.id, 'title', e.target.value)}
-                          placeholder="Section Title (e.g. Certifications)"
-                          autoComplete="off"
-                          className="w-full bg-transparent border-b-2 border-[#ccc] dark:border-zinc-700 py-1 mb-4 focus:border-[#007BFF] outline-none text-sm font-bold dark:text-white"
-                        />
-                        <textarea 
-                          value={section.content}
-                          onChange={e => updateCustomSection(section.id, 'content', e.target.value)}
-                          placeholder="Section content..."
-                          className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-3 rounded-lg text-xs min-h-[100px] outline-none focus:ring-1 focus:ring-[#1A1A1A] dark:focus:ring-white dark:text-white transition-colors"
-                        />
                       </div>
-                    ))}
-                  </div>
-                </section>
-
-                {/* Certificates Section */}
-                <section className="space-y-6">
-                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] pb-2">
-                    <CheckCircle2 size={16} className="text-[#8E8E8E]" />
-                    <h2 className="text-xs font-bold uppercase tracking-widest">Certifications</h2>
-                  </div>
-                  
-                  <div className="space-y-4">
-                    <div className="bg-white p-6 rounded-2xl border border-[#E5E5E5] w-full md:w-[60%]">
-                      <div className="flex gap-2">
-                        <input 
-                          type="text" 
-                          placeholder="Enter certificate name..."
-                          autoComplete="off"
-                          className="flex-1 bg-transparent border-b-2 border-[#ccc] py-2 focus:border-[#007BFF] outline-none text-sm"
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              addCertificate((e.target as HTMLInputElement).value);
-                              (e.target as HTMLInputElement).value = '';
-                            }
-                          }}
-                        />
-                        <button 
-                          onClick={(e) => {
-                            const input = e.currentTarget.previousElementSibling as HTMLInputElement;
-                            addCertificate(input.value);
-                            input.value = '';
-                          }}
-                          className="bg-[#1A1A1A] hover:bg-[#333] text-white px-6 py-2 rounded-xl transition-all text-xs font-bold uppercase tracking-widest"
-                        >
-                          Add
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {certificates.map((cert, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-3 bg-white rounded-xl border border-[#E5E5E5] group">
-                          <span className="text-xs text-gray-700">{cert}</span>
-                          <button 
-                            onClick={() => removeCertificate(idx)}
-                            className="text-[#E5E5E5] hover:text-red-500 transition-colors"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                      <div className="space-y-6">
+                        <div className="space-y-2">
+                          <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Section Title</label>
+                          <input value={section.title} onChange={(e) => updateCustomSection(section.id, 'title', e.target.value)} placeholder="E.g. Languages" className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none text-sm dark:text-white" />
                         </div>
-                      ))}
+                        <div className="space-y-2">
+                          <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Content</label>
+                          <textarea value={section.content} onChange={(e) => updateCustomSection(section.id, 'content', e.target.value)} placeholder="Details..." className="w-full h-32 bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none resize-none text-sm dark:text-white" />
+                        </div>
+                      </div>
                     </div>
+                  ))}
+
+                  <div className="flex flex-col items-center gap-8 py-12">
+                    <button
+                      type="button"
+                      onClick={addCustomSection}
+                      className="px-6 py-3 bg-[#F5F5F4] dark:bg-zinc-800 text-[#1A1A1A] dark:text-white rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-[#E5E5E5] dark:hover:bg-zinc-700 transition-all flex items-center gap-2"
+                    >
+                      <Plus size={14} />
+                      Add Custom Section
+                    </button>
+
+                    <button 
+                      onClick={() => {
+                        if (validateManualForm()) {
+                          setActiveTab('preview');
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }
+                      }}
+                      className="px-10 py-5 bg-black dark:bg-white text-white dark:text-[#1A1A1A] rounded-full text-xs font-bold uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-2xl flex items-center gap-4 group"
+                    >
+                      <Download size={18} className="group-hover:translate-y-1 transition-transform" />
+                      Generate & Download Resume
+                    </button>
                   </div>
                 </section>
 
@@ -1724,10 +1824,11 @@ export default function App() {
                     </button>
                     <button 
                       type="button"
+                      disabled={!formData.fullName || !formData.email}
                       onClick={handleGenerate}
-                      className="flex-1 py-4 bg-[#1A1A1A] text-white rounded-2xl font-bold uppercase text-xs tracking-widest hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                      className="flex-1 py-4 bg-[#1A1A1A] text-white rounded-2xl font-bold uppercase text-xs tracking-widest hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:scale-100 disabled:cursor-not-allowed"
                     >
-                      Preview Resume
+                      Generate Resume
                       <ChevronRight size={16} />
                     </button>
                     <button 
@@ -1741,40 +1842,6 @@ export default function App() {
                   </div>
                 </div>
                 </form>
-
-                {/* Quick Live Preview Section */}
-                <section className="mt-16 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                  <div className="flex items-center gap-4 border-b border-[#E5E5E5] dark:border-zinc-800 pb-2">
-                    <Activity size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
-                    <h2 className="text-xs font-bold uppercase tracking-widest dark:text-zinc-400">Live Resume Preview</h2>
-                  </div>
-                  <div className="card p-8 border border-[#E5E5E5] dark:border-zinc-800 shadow-xl shadow-black/5 transition-colors">
-                    <div className="space-y-4">
-                      <h2 className="text-2xl font-bold uppercase tracking-tight dark:text-white">{formData.fullName || "Your Name"}</h2>
-                      <h3 className="text-lg font-serif italic text-[#8E8E8E] dark:text-zinc-500">{formData.role || "Job Role"}</h3>
-                      
-                      <div className="pt-4 space-y-2">
-                        <h4 className="text-xs font-bold uppercase tracking-widest border-b border-[#F5F5F4] dark:border-zinc-800 pb-1 dark:text-zinc-400">Skills</h4>
-                        <p className="text-sm text-[#4A4A4A] dark:text-zinc-300">
-                          {skillCategories.flatMap(c => c.skills.map(s => s.name)).join(", ") || "No skills added yet"}
-                        </p>
-                      </div>
-
-                      <div className="pt-4 space-y-2">
-                        <h4 className="text-xs font-bold uppercase tracking-widest border-b border-[#F5F5F4] dark:border-zinc-800 pb-1 dark:text-zinc-400">Experience</h4>
-                        <div className="space-y-4">
-                          {experience.length > 0 ? experience.map(exp => (
-                            <div key={exp.id}>
-                              <p className="text-sm font-bold dark:text-white">{exp.role} at {exp.company}</p>
-                              <p className="text-xs text-[#8E8E8E] dark:text-zinc-500">{exp.duration}</p>
-                              <p className="text-xs mt-1 text-[#4A4A4A] dark:text-zinc-300 line-clamp-2">{exp.description}</p>
-                            </div>
-                          )) : <p className="text-sm text-[#8E8E8E] dark:text-zinc-500 italic">No experience added yet</p>}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </section>
               </motion.div>
             )}
 
@@ -1788,11 +1855,21 @@ export default function App() {
               >
                 {/* Template Selection Dropdown */}
                 <div className="flex items-center justify-between bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-[#E5E5E5] dark:border-zinc-800 shadow-sm print:hidden transition-colors">
-                  <div className="flex items-center gap-4">
-                    <Layers size={20} className="text-[#1A1A1A] dark:text-white" />
-                    <div>
-                      <h3 className="text-sm font-bold uppercase tracking-widest dark:text-white">Choose Resume Template</h3>
-                      <p className="text-[10px] text-[#8E8E8E] dark:text-zinc-500 font-mono uppercase tracking-widest">Select a style for your professional narrative</p>
+                  <div className="flex items-center gap-6">
+                    <button 
+                      onClick={() => setActiveTab('edit')}
+                      className="flex items-center gap-2 px-4 py-2 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs font-bold uppercase tracking-widest text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all"
+                    >
+                      <ChevronLeft size={16} />
+                      Back to Edit
+                    </button>
+                    <div className="h-8 w-px bg-zinc-200 dark:bg-zinc-700" />
+                    <div className="flex items-center gap-4">
+                      <Layers size={20} className="text-[#1A1A1A] dark:text-white" />
+                      <div>
+                        <h3 className="text-sm font-bold uppercase tracking-widest dark:text-white">Choose Template</h3>
+                        <p className="text-[10px] text-[#8E8E8E] dark:text-zinc-500 font-mono uppercase tracking-widest">Toggle Styles</p>
+                      </div>
                     </div>
                   </div>
                   <select 
@@ -1801,20 +1878,27 @@ export default function App() {
                     onChange={(e) => setSelectedTemplate(e.target.value)}
                     className="bg-[#F5F5F4] dark:bg-zinc-800 dark:text-white border-none outline-none px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-widest cursor-pointer hover:bg-[#E5E5E5] dark:hover:bg-zinc-700 transition-all"
                   >
-                    <option value="template1">Professional</option>
-                    <option value="template2">Modern</option>
-                    <option value="template3">Creative</option>
-                    <option value="template4">Elegant</option>
-                    <option value="template5">Corporate</option>
-                    <option value="template6">Minimal Dark</option>
-                    <option value="template7">Sidebar</option>
-                    <option value="template8">Clean Blue</option>
+                    <option value="professional">Professional</option>
+                    <option value="modern">Modern</option>
+                    <option value="minimal">Minimal</option>
+                    <option value="creative">Creative</option>
+                    <option value="corporate">Corporate</option>
+                    <option value="elegant">Elegant</option>
+                    <option value="sidebar">Sidebar</option>
                   </select>
+                  <button 
+                    onClick={exportToPDF}
+                    disabled={isExporting}
+                    className="flex items-center gap-2 px-6 py-3 bg-[#1A1A1A] text-white rounded-xl font-bold uppercase text-[10px] tracking-widest hover:scale-105 transition-all shadow-lg disabled:opacity-50"
+                  >
+                    {isExporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                    {isExporting ? "Generating..." : "Download PDF"}
+                  </button>
                 </div>
 
                 {/* Resume Preview Container */}
                 <div 
-                  id="resumePreview"
+                  id="resume"
                   className={cn(
                     "bg-white shadow-2xl rounded-sm mx-auto print:shadow-none print:m-0 overflow-hidden resume-container",
                     selectedTemplate
@@ -1825,156 +1909,260 @@ export default function App() {
                   }}
                 >
                   <div className="p-[25px]">
-                    <header className="flex items-center gap-6 mb-[15px]">
-                      {profilePhoto && (
-                        <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-[#ddd] flex-shrink-0">
-                          <img src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
-                        </div>
-                      )}
-                      <div className={cn("flex-1", !profilePhoto && "text-center")}>
-                        <motion.h1 
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="text-xl font-bold mb-[2px] uppercase"
-                        >
-                          {(previewData || formData).fullName || "RAVU MOHAN DURGA PRASAD"}
-                        </motion.h1>
-                        <motion.div 
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          transition={{ delay: 0.2 }}
-                          className="text-[12px] text-[#555]"
-                        >
-                          {(previewData || formData).phone || "+91 XXXXXXXXXX"} | {(previewData || formData).email || "your.email@gmail.com"} | 
-                          LinkedIn: {(previewData || formData).linkedin || "linkedin.com/in/yourprofile"} | 
-                          GitHub: {(previewData || formData).github || "github.com/yourusername"}
-                        </motion.div>
-                      </div>
-                    </header>
+                    {/* Modular Template Rendering */}
+                    {selectedTemplate === 'modern' ? (
+                      <div className="space-y-8">
+                        <header className="text-center border-b-2 border-zinc-100 pb-8">
+                          <h1 className="text-3xl font-bold uppercase tracking-tight mb-2">
+                            {(previewData || formData).fullName || "Your Name"}
+                          </h1>
+                          <p className="text-blue-600 font-semibold mb-3">{(previewData || formData).role}</p>
+                          <div className="text-[10px] text-zinc-500 font-medium flex flex-wrap justify-center gap-4 uppercase tracking-widest">
+                            <span>{(previewData || formData).phone}</span>
+                            <span>{(previewData || formData).email}</span>
+                            { (previewData || formData).linkedin && <span>LinkedIn: {(previewData || formData).linkedin}</span> }
+                            { (previewData || formData).github && <span>GitHub: {(previewData || formData).github}</span> }
+                          </div>
+                        </header>
 
-                    <div className="space-y-[12px]">
-                      {/* Profile Section */}
-                      {(previewData || formData).summary && (
-                        <section>
-                          <h2 className="text-[14px] font-bold border-b-2 border-[#ddd] pb-[2px] mb-[4px] uppercase tracking-tight">PROFILE</h2>
-                          <p className="leading-relaxed text-[#333]">{(previewData || formData).summary}</p>
-                        </section>
-                      )}
+                        {(previewData || formData).summary && (
+                          <section>
+                            <h2 className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-3 border-l-4 border-blue-600 pl-3">Summary</h2>
+                            <p className="text-sm leading-relaxed text-zinc-700">{(previewData || formData).summary}</p>
+                          </section>
+                        )}
 
-                      {/* Experience Section */}
-                      {experience.length > 0 && (
-                        <section>
-                          <h2 className="text-[14px] font-bold border-b-2 border-[#ddd] pb-[2px] mb-[4px] uppercase tracking-tight">EXPERIENCE</h2>
-                          <div className="space-y-[10px]">
-                            {experience.map((exp) => (
-                              <div key={exp.id}>
-                                <div className="flex justify-between items-start">
-                                  <span className="font-bold text-[13px]">{exp.role}</span>
-                                  <span className="text-[11px] text-[#555]">{exp.duration}</span>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                          {experience.length > 0 && (
+                            <section className="space-y-4">
+                              <h2 className="text-xs font-bold text-blue-600 uppercase tracking-widest border-l-4 border-blue-600 pl-3">Experience</h2>
+                              {experience.map(exp => (
+                                <div key={exp.id} className="space-y-1">
+                                  <h3 className="text-sm font-bold text-zinc-900">{exp.role}</h3>
+                                  <p className="text-[10px] text-zinc-500 font-bold uppercase">{exp.company} | {exp.duration}</p>
+                                  <p className="text-xs text-zinc-600 line-clamp-3">{exp.description}</p>
                                 </div>
-                                <div className="text-[12px] italic text-[#555] mb-[2px]">{exp.company}</div>
-                                <ul className="list-disc ml-[20px] space-y-[1px]">
-                                  {exp.description.split('. ').filter(b => b.trim().length > 0).map((bullet, idx) => (
-                                    <li key={idx} className="text-[#333]">{bullet}</li>
-                                  ))}
-                                </ul>
-                              </div>
-                            ))}
-                          </div>
-                        </section>
-                      )}
+                              ))}
+                            </section>
+                          )}
 
-                      {/* Projects Section */}
-                      {projects.length > 0 && (
-                        <section>
-                          <h2 className="text-[14px] font-bold border-b-2 border-[#ddd] pb-[2px] mb-[4px] uppercase tracking-tight">PROJECTS</h2>
-                          <div className="space-y-[8px]">
-                            {projects.map((proj) => (
-                              <div key={proj.id}>
-                                <h3 className="text-[13px] font-bold mb-[2px]">{proj.title}</h3>
-                                <ul className="list-disc ml-[20px] space-y-[1px]">
-                                  {proj.description.split('. ').filter(b => b.trim().length > 0).map((bullet, idx) => (
-                                    <li key={idx} className="text-[#333]">{bullet}</li>
-                                  ))}
-                                </ul>
+                          <div className="space-y-8">
+                            <section className="space-y-4">
+                              <h2 className="text-xs font-bold text-blue-600 uppercase tracking-widest border-l-4 border-blue-600 pl-3">Skills</h2>
+                              <div className="flex flex-wrap gap-2">
+                                {skillCategories.flatMap(c => c.skills).map(s => (
+                                  <span key={s.id} className="bg-zinc-100 text-[10px] px-3 py-1 rounded-full font-medium text-zinc-700">{s.name}</span>
+                                ))}
                               </div>
-                            ))}
-                          </div>
-                        </section>
-                      )}
+                            </section>
 
-                      {/* Certificates Section */}
-                      {certificates.length > 0 && (
-                        <section>
-                          <h2 className="text-[14px] font-bold border-b-2 border-[#ddd] pb-[2px] mb-[4px] uppercase tracking-tight">CERTIFICATIONS</h2>
-                          <ul className="list-disc ml-[20px] space-y-[1px]">
-                            {certificates.map((cert, idx) => (
-                              <li key={idx} className="text-[#333] text-[12px]">{cert}</li>
-                            ))}
-                          </ul>
+                            {education.length > 0 && (
+                              <section className="space-y-4">
+                                <h2 className="text-xs font-bold text-blue-600 uppercase tracking-widest border-l-4 border-blue-600 pl-3">Education</h2>
+                                {education.map(edu => (
+                                  <div key={edu.id}>
+                                    <h3 className="text-sm font-bold">{edu.degree}</h3>
+                                    <p className="text-xs text-zinc-500">{edu.school} ({edu.year})</p>
+                                  </div>
+                                ))}
+                              </section>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ) : selectedTemplate === 'minimal' ? (
+                      <div className="space-y-6 font-serif">
+                        <header>
+                          <h1 className="text-2xl font-bold text-zinc-900">{(previewData || formData).fullName || "Your Name"}</h1>
+                          <p className="text-zinc-500 text-sm italic">{(previewData || formData).role}</p>
+                          <div className="text-xs text-zinc-400 mt-2">
+                            {(previewData || formData).email} • {(previewData || formData).phone}
+                          </div>
+                        </header>
+
+                        <section className="space-y-2">
+                          <h2 className="text-xs font-bold uppercase tracking-widest text-zinc-400 border-b pb-1">Skills</h2>
+                          <p className="text-sm text-zinc-700 leading-relaxed">
+                            {skillCategories.flatMap(c => c.skills.map(s => s.name)).join(", ")}
+                          </p>
                         </section>
-                      )}
-                      <section>
-                        <h2 className="text-[14px] font-bold border-b-2 border-[#ddd] pb-[2px] mb-[4px] uppercase tracking-tight">SKILLS</h2>
-                        <div className="grid grid-cols-2 gap-[4px]">
-                          {skillCategories.map((cat) => (
-                            <div key={cat.id}>
-                              <strong>{cat.name}:</strong> {cat.skills.map(s => s.name).join(", ")}
+
+                        <section className="space-y-4">
+                          <h2 className="text-xs font-bold uppercase tracking-widest text-zinc-400 border-b pb-1">Experience</h2>
+                          {experience.map(exp => (
+                            <div key={exp.id} className="flex justify-between gap-4">
+                              <div className="flex-1">
+                                <h3 className="text-sm font-bold">{exp.role}</h3>
+                                <p className="text-xs text-zinc-500 italic">{exp.company}</p>
+                                <p className="text-xs text-zinc-600 mt-1">{exp.description}</p>
+                              </div>
+                              <span className="text-[10px] whitespace-nowrap text-zinc-400">{exp.duration}</span>
                             </div>
                           ))}
-                        </div>
-                      </section>
+                        </section>
 
-                      {/* Education Section */}
-                      <section>
-                        <h2 className="text-[14px] font-bold border-b-2 border-[#ddd] pb-[2px] mb-[4px] uppercase tracking-tight">EDUCATION</h2>
-                        <div className="space-y-[4px]">
-                          {education.map((edu) => (
-                            <div key={edu.id} className="flex justify-between items-start">
-                              <div>
-                                <strong>{edu.degree}</strong><br />
-                                {edu.school}
-                              </div>
-                              <div className="text-right">{edu.year}</div>
+                        <section className="space-y-2">
+                          <h2 className="text-xs font-bold uppercase tracking-widest text-zinc-400 border-b pb-1">Education</h2>
+                          {education.map(edu => (
+                            <div key={edu.id} className="flex justify-between text-sm">
+                              <span><strong>{edu.degree}</strong>, {edu.school}</span>
+                              <span className="text-zinc-400 font-mono text-xs">{edu.year}</span>
                             </div>
                           ))}
-                        </div>
-                      </section>
-
-                      {/* Achievements Section */}
-                      {achievements && (
-                        <section>
-                          <h2 className="text-[14px] font-bold border-b-2 border-[#ddd] pb-[2px] mb-[4px] uppercase tracking-tight">ACHIEVEMENTS</h2>
-                          <ul className="list-disc ml-[20px] space-y-[1px]">
-                            {achievements.split('. ').filter(b => b.trim().length > 0).map((bullet, idx) => (
-                              <li key={idx} className="text-[#333]">{bullet}</li>
-                            ))}
-                          </ul>
                         </section>
-                      )}
-
-                      {/* Certificates Section */}
-                      {certificates.length > 0 && (
-                        <section>
-                          <h2 className="text-[14px] font-bold border-b-2 border-[#ddd] pb-[2px] mb-[4px] uppercase tracking-tight">CERTIFICATES</h2>
-                          <ul className="list-disc ml-[20px] space-y-[1px]">
-                            {certificates.map((cert, idx) => (
-                              <li key={idx} className="text-[#333] text-[12px]">{cert}</li>
-                            ))}
-                          </ul>
-                        </section>
-                      )}
-
-                      {/* Custom Sections */}
-                      {customSections.map((section) => (
-                        <section key={section.id}>
-                          <h2 className="text-[14px] font-bold border-b-2 border-[#ddd] pb-[2px] mb-[4px] uppercase tracking-tight">{section.title || "CUSTOM SECTION"}</h2>
-                          <div className="whitespace-pre-wrap text-[#333]">
-                            {section.content}
+                      </div>
+                    ) : (
+                      /* Default / Professional Layout (Legacy) */
+                      <>
+                        <header className="flex items-center gap-6 mb-[15px]">
+                          {profilePhoto && (
+                            <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-[#ddd] flex-shrink-0">
+                              <img src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
+                            </div>
+                          )}
+                          <div className={cn("flex-1")}>
+                            <div className={cn("flex flex-col gap-1", !profilePhoto && "items-center text-center")}>
+                              <motion.h1 
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="text-2xl font-bold uppercase tracking-tight leading-none"
+                              >
+                                {(previewData || formData).fullName || "Your Name"}
+                              </motion.h1>
+                              {((previewData || formData).role) && (
+                                <p className="text-[#1A1A1A] font-medium text-sm">{(previewData || formData).role}</p>
+                              )}
+                              <motion.div 
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                transition={{ delay: 0.2 }}
+                                className="text-[10px] text-[#8E8E8E] font-medium flex flex-wrap gap-x-3 gap-y-1 justify-center md:justify-start"
+                              >
+                                <span>{(previewData || formData).phone}</span>
+                                <span>{(previewData || formData).email}</span>
+                                { (previewData || formData).linkedin && <span>LinkedIn: {(previewData || formData).linkedin}</span> }
+                                { (previewData || formData).github && <span>GitHub: {(previewData || formData).github}</span> }
+                                { (previewData || formData).leetcode && <span>LeetCode: {(previewData || formData).leetcode}</span> }
+                                { (previewData || formData).hackerrank && <span>HackerRank: {(previewData || formData).hackerrank}</span> }
+                              </motion.div>
+                            </div>
                           </div>
-                        </section>
-                      ))}
-                    </div>
+                        </header>
+
+                        <div className="space-y-[12px]">
+                          {/* Profile Section */}
+                          {(previewData || formData).summary && (
+                            <section>
+                              <h2 className="text-[14px] font-bold border-b-2 border-[#ddd] pb-[2px] mb-[4px] uppercase tracking-tight">PROFILE</h2>
+                              <p className="leading-relaxed text-[#333]">{(previewData || formData).summary}</p>
+                            </section>
+                          )}
+
+                          {/* Experience Section */}
+                          {experience.length > 0 && (
+                            <section>
+                              <h2 className="text-[14px] font-bold border-b-2 border-[#ddd] pb-[2px] mb-[4px] uppercase tracking-tight">EXPERIENCE</h2>
+                              <div className="space-y-[10px]">
+                                {experience.map((exp) => (
+                                  <div key={exp.id}>
+                                    <div className="flex justify-between items-start">
+                                      <span className="font-bold text-[13px]">{exp.role}</span>
+                                      <span className="text-[11px] text-[#555]">{exp.duration}</span>
+                                    </div>
+                                    <div className="text-[12px] italic text-[#555] mb-[2px]">{exp.company}</div>
+                                    <ul className="list-disc ml-[20px] space-y-[1px]">
+                                      {exp.description.split('. ').filter(b => b.trim().length > 0).map((bullet, idx) => (
+                                        <li key={idx} className="text-[#333]">{bullet}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                ))}
+                              </div>
+                            </section>
+                          )}
+
+                          {/* Projects Section */}
+                          {projects.length > 0 && (
+                            <section>
+                              <h2 className="text-[14px] font-bold border-b-2 border-[#ddd] pb-[2px] mb-[4px] uppercase tracking-tight">PROJECTS</h2>
+                              <div className="space-y-[8px]">
+                                {projects.map((proj) => (
+                                  <div key={proj.id}>
+                                    <div className="flex justify-between items-baseline mb-[2px]">
+                                      <h3 className="text-[13px] font-bold">{proj.title}</h3>
+                                      {proj.tech && <span className="text-[10px] text-[#8E8E8E] font-mono">{proj.tech}</span>}
+                                    </div>
+                                    <ul className="list-disc ml-[20px] space-y-[1px]">
+                                      {proj.description.split('. ').filter(b => b.trim().length > 0).map((bullet, idx) => (
+                                        <li key={idx} className="text-[#333]">{bullet}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                ))}
+                              </div>
+                            </section>
+                          )}
+
+                          {/* Certificates Section */}
+                          {certificates.length > 0 && (
+                            <section>
+                              <h2 className="text-[14px] font-bold border-b-2 border-[#ddd] pb-[2px] mb-[4px] uppercase tracking-tight">CERTIFICATIONS & ACHIEVEMENTS</h2>
+                              <ul className="list-disc ml-[20px] space-y-[1px]">
+                                {certificates.map((cert, idx) => (
+                                  <li key={idx} className="text-[#333] text-[12px] font-medium">{cert}</li>
+                                ))}
+                                {achievements && achievements.split('. ').filter(b => b.trim().length > 0).map((bullet, idx) => (
+                                  <li key={`ach-${idx}`} className="text-[#333] text-[12px]">{bullet}</li>
+                                ))}
+                              </ul>
+                            </section>
+                          )}
+
+                          <section>
+                            <h2 className="text-[14px] font-bold border-b-2 border-[#ddd] pb-[2px] mb-[4px] uppercase tracking-tight">SKILLS</h2>
+                            <div className="grid grid-cols-2 gap-[4px]">
+                              {skillCategories.map((cat) => (
+                                <div key={cat.id} className="text-[12px]">
+                                  <strong>{cat.name}:</strong> <span className="text-[#444]">{cat.skills.map(s => s.name).join(", ")}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </section>
+
+                          {/* Education Section */}
+                          <section>
+                            <h2 className="text-[14px] font-bold border-b-2 border-[#ddd] pb-[2px] mb-[4px] uppercase tracking-tight">EDUCATION</h2>
+                            <div className="space-y-[8px]">
+                              {education.map((edu) => (
+                                <div key={edu.id} className="flex justify-between items-start">
+                                  <div className="text-[12px]">
+                                    <strong className="text-[13px]">{edu.degree}</strong>
+                                    {edu.percentage && (
+                                      <span className="ml-2 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded text-[10px] font-bold text-[#1A1A1A] dark:text-white">
+                                        {edu.percentage}
+                                      </span>
+                                    )}
+                                    <br />
+                                    <span className="text-[#555] italic">{edu.school}</span>
+                                  </div>
+                                  <div className="text-right text-[11px] text-[#888] font-mono">{edu.year}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </section>
+
+                          {/* Custom Sections */}
+                          {customSections.map((section) => (
+                            <section key={section.id}>
+                              <h2 className="text-[14px] font-bold border-b-2 border-[#ddd] pb-[2px] mb-[4px] uppercase tracking-tight">{section.title || "CUSTOM SECTION"}</h2>
+                              <div className="whitespace-pre-wrap text-[#333]">
+                                {section.content}
+                              </div>
+                            </section>
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   {isValidResume && (
