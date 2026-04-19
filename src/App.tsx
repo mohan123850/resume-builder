@@ -11,10 +11,12 @@ import {
   AlertCircle,
   Plus,
   Trash2,
+  X,
   ChevronRight,
   ChevronLeft,
   FileText,
   CheckCircle2,
+  Eye,
   Loader2,
   Globe,
   Linkedin,
@@ -189,8 +191,23 @@ export default function App() {
   
   const [jobMatches, setJobMatches] = React.useState<JobMatch[]>([]);
   const [isMatching, setIsMatching] = React.useState(false);
-  const [activeTab, setActiveTab] = React.useState<'edit' | 'preview' | 'jobs'>('edit');
-  const [isDarkMode, setIsDarkMode] = React.useState(false);
+  const [activeTab, setActiveTab] = React.useState<'edit' | 'preview' | 'jobs'>('preview');
+  const [isDarkMode, setIsDarkMode] = React.useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('isDarkMode');
+      return saved ? JSON.parse(saved) : false;
+    }
+    return false;
+  });
+
+  React.useEffect(() => {
+    localStorage.setItem('isDarkMode', JSON.stringify(isDarkMode));
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDarkMode]);
   const [previewData, setPreviewData] = React.useState<any>(null);
 
   // --- ATS Analyzer State ---
@@ -215,10 +232,13 @@ export default function App() {
   const [aiEducation, setAiEducation] = React.useState('');
   const [aiSchool, setAiSchool] = React.useState('');
   const [aiSchoolPercent, setAiSchoolPercent] = React.useState('');
+  const [aiSchoolYear, setAiSchoolYear] = React.useState('');
   const [aiInter, setAiInter] = React.useState('');
   const [aiInterPercent, setAiInterPercent] = React.useState('');
+  const [aiInterYear, setAiInterYear] = React.useState('');
   const [aiDegree, setAiDegree] = React.useState('');
   const [aiBtechPercent, setAiBtechPercent] = React.useState('');
+  const [aiDegreeYear, setAiDegreeYear] = React.useState('');
   const [aiProjectsInput, setAiProjectsInput] = React.useState('');
   const [aiCertificatesInput, setAiCertificatesInput] = React.useState('');
   const [aiAchievements, setAiAchievements] = React.useState('');
@@ -231,7 +251,28 @@ export default function App() {
   const [manualMatchScore, setManualMatchScore] = React.useState<number | null>(null);
 
   // --- Template Selection State ---
-  const [selectedTemplate, setSelectedTemplate] = React.useState('professional');
+  const [selectedTemplate, setSelectedTemplate] = React.useState('executive');
+  const [previewScale, setPreviewScale] = React.useState(0.9);
+  const [resumeSpacing, setResumeSpacing] = React.useState(6);
+  const [currentStep, setCurrentStep] = React.useState(1);
+  const [sectionsOrder, setSectionsOrder] = React.useState<string[]>([
+    'summary',
+    'experience',
+    'education',
+    'skills',
+    'projects',
+    'certifications',
+    'custom'
+  ]);
+  const [isPolishing, setIsPolishing] = React.useState<string | null>(null);
+
+  const moveSection = (index: number, direction: number) => {
+    const newOrder = [...sectionsOrder];
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= newOrder.length) return;
+    [newOrder[index], newOrder[targetIndex]] = [newOrder[targetIndex], newOrder[index]];
+    setSectionsOrder(newOrder);
+  };
 
   // --- Suggested Jobs State ---
   const [suggestedJobs, setSuggestedJobs] = React.useState<string[]>([]);
@@ -288,52 +329,18 @@ export default function App() {
     localStorage.removeItem("resumeData");
   }, []);
 
-  // Load from localStorage on mount
-  React.useEffect(() => {
-    const saved = localStorage.getItem("resumeData");
-    if (saved) {
-      try {
-        const data = JSON.parse(saved);
-        if (data.formData) setFormData(data.formData);
-        if (data.skillCategories) setSkillCategories(data.skillCategories);
-        if (data.education) setEducation(data.education);
-        if (data.experience) setExperience(data.experience);
-        if (data.projects) setProjects(data.projects);
-        if (data.achievements) setAchievements(data.achievements);
-        if (data.customSections) setCustomSections(data.customSections);
-        if (data.certificates) setCertificates(data.certificates);
-        if (data.profilePhoto) setProfilePhoto(data.profilePhoto);
-        if (data.selectedTemplate) setSelectedTemplate(data.selectedTemplate);
-      } catch (e) {
-        console.error("Error loading saved data", e);
-      }
-    }
-  }, []);
-
-  // Save to localStorage whenever data changes
-  React.useEffect(() => {
-    const dataToSave = {
-      formData,
-      skillCategories,
-      education,
-      experience,
-      projects,
-      achievements,
-      customSections,
-      certificates,
-      profilePhoto,
-      selectedTemplate
-    };
-    localStorage.setItem("resumeData", JSON.stringify(dataToSave));
-  }, [formData, skillCategories, education, experience, projects, achievements, customSections, certificates, profilePhoto, selectedTemplate]);
+  // persistence removed
 
   const validateManualForm = () => {
     const errs: Record<string, string> = {};
     if (!formData.fullName.trim()) errs.fullName = "Full name is required";
     if (!formData.email.trim()) errs.email = "Email is required";
     else if (!formData.email.includes("@")) errs.email = "Invalid email format";
-    if (!formData.role.trim()) errs.role = "Job role is required";
     
+    if (!formData.fullName.trim() || !formData.email.trim()) {
+      alert("Please fill required fields");
+    }
+
     setManualErrors(errs);
     if (Object.keys(errs).length > 0) {
       const firstError = Object.keys(errs)[0];
@@ -535,48 +542,56 @@ export default function App() {
     }
   };
 
-  const [isExporting, setIsExporting] = React.useState(false);
+  const downloadPDF = () => {
+    const element = document.getElementById("resume");
+    const container = element?.parentElement; 
+    if (!element || !container) return;
 
-  const exportToPDF = () => {
-    try {
-      window.print();
-    } catch (err) {
-      console.error(err);
-      alert("Download not supported here. Use Print instead.");
-    }
-  };
+    // High resolution but stable scale (2 is standard high, 3 is very high, 4 often breaks)
+    const opt = {
+      margin: 0,
+      filename: `${formData.fullName.replace(/\s+/g, '_') || 'My'}_Resume.pdf`,
+      image: { type: 'jpeg' as const, quality: 0.98 },
+      html2canvas: { 
+        scale: 2.5, 
+        useCORS: true, 
+        logging: false,
+        backgroundColor: '#ffffff',
+        windowWidth: 794, // Standard A4 width in pixels at 96 DPI
+        windowHeight: 1123,
+      },
+      jsPDF: {
+        unit: 'mm' as const,
+        format: 'a4' as const,
+        orientation: 'portrait' as const,
+        compress: true
+      },
+      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+    };
 
-  const handleDownload = () => {
-    window.print();
+    // Store original transform to restore later
+    const originalTransform = container.style.transform;
+    const originalTransformOrigin = container.style.transformOrigin;
+
+    // Temporarily reset transform for clean capture
+    container.style.transform = 'none';
+    container.style.transformOrigin = 'unset';
+
+    // Execute capture
+    html2pdf().set(opt).from(element).save().then(() => {
+      // Restore transform
+      container.style.transform = originalTransform;
+      container.style.transformOrigin = originalTransformOrigin;
+    }).catch((err: any) => {
+      console.error("PDF generation failed:", err);
+      container.style.transform = originalTransform;
+      container.style.transformOrigin = originalTransformOrigin;
+    });
   };
 
   const downloadSimplePDF = () => {
-    const doc = new jsPDF();
-    
-    const name = formData.fullName || "Your Name";
-    const role = formData.role || "Job Role";
-    const skills = skillCategories.flatMap(cat => cat.skills.map(s => s.name)).join(", ") || "No skills added";
-    const experienceText = experience.map(exp => `${exp.role} at ${exp.company}`).join("\n") || "No experience added";
-
-    doc.setFontSize(18);
-    doc.text(name, 10, 10);
-
-    doc.setFontSize(14);
-    doc.text(role, 10, 20);
-
-    doc.setFontSize(12);
-    doc.text("Skills:", 10, 35);
-    doc.setFontSize(10);
-    const splitSkills = doc.splitTextToSize(skills, 180);
-    doc.text(splitSkills, 10, 45);
-
-    doc.setFontSize(12);
-    doc.text("Experience:", 10, 70);
-    doc.setFontSize(10);
-    const splitExp = doc.splitTextToSize(experienceText, 180);
-    doc.text(splitExp, 10, 80);
-
-    doc.save("Resume_Simple.pdf");
+    // Both buttons now use the high-fidelity, single-page generator
+    downloadPDF();
   };
 
   const isResumeRelated = (text: string) => {
@@ -637,6 +652,38 @@ export default function App() {
     setAtsSuggestions(suggestions);
   };
 
+  const polishText = async (field: string, text: string) => {
+    if (!text) return;
+    setIsPolishing(field);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const prompt = `You are a professional resume writer. Polish and improve the following text for a resume, making it more professional, impactful, and concise. Maintain the original meaning but use strong action verbs and professional vocabulary. Return ONLY the polished text.
+      
+      Text to polish: "${text}"`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt
+      });
+
+      const polished = response.text.trim().replace(/^"|"$/g, '');
+      
+      if (field === 'summary') {
+        setFormData(prev => ({ ...prev, summary: polished }));
+      } else if (field.startsWith('exp-')) {
+        const id = field.replace('exp-', '');
+        updateExperience(id, 'description', polished);
+      } else if (field.startsWith('proj-')) {
+        const id = field.replace('proj-', '');
+        updateProject(id, 'description', polished);
+      }
+    } catch (error) {
+      console.error("Polishing failed:", error);
+    } finally {
+      setIsPolishing(null);
+    }
+  };
+
   const generateAIResume = async () => {
     setAiErrors({ name: '', role: '', skills: '' });
     
@@ -693,9 +740,9 @@ export default function App() {
         GitHub: ${aiGithub}
         LeetCode: ${aiLeetcode}
         HackerRank: ${aiHackerrank}
-        School: ${aiSchool}
-        Intermediate: ${aiInter}
-        Degree: ${aiDegree}
+        School: ${aiSchool} (${aiSchoolYear}, ${aiSchoolPercent})
+        Intermediate: ${aiInter} (${aiInterYear}, ${aiInterPercent})
+        Degree: ${aiDegree} (${aiDegreeYear}, ${aiBtechPercent})
         Projects Input: ${aiProjectsInput}
         Certifications Input: ${aiCertificatesInput}
         Additional Info: ${aiAdditionalInfo}
@@ -779,9 +826,9 @@ export default function App() {
         <div class="space-y-2">
           <h3 class="text-xs font-bold uppercase tracking-widest text-[#8E8E8E]">Education</h3>
           <div class="text-sm text-[#333] space-y-1">
-            ${aiDegree ? `<div><strong>B.Tech / Degree:</strong> ${aiDegree} ${aiBtechPercent ? `<span class="bg-gray-100 px-2 rounded text-[10px] font-bold">(${aiBtechPercent})</span>` : ''}</div>` : ''}
-            ${aiInter ? `<div><strong>Intermediate / Polytechnic:</strong> ${aiInter} ${aiInterPercent ? `<span class="bg-gray-100 px-2 rounded text-[10px] font-bold">(${aiInterPercent})</span>` : ''}</div>` : ''}
-            ${aiSchool ? `<div><strong>High School (SSC):</strong> ${aiSchool} ${aiSchoolPercent ? `<span class="bg-gray-100 px-2 rounded text-[10px] font-bold">(${aiSchoolPercent})</span>` : ''}</div>` : ''}
+            ${aiDegree ? `<div><strong>B.Tech / Degree:</strong> ${aiDegree} ${aiDegreeYear ? `| ${aiDegreeYear}` : ''} ${aiBtechPercent ? `<span class="bg-gray-100 px-2 rounded text-[10px] font-bold">(${aiBtechPercent})</span>` : ''}</div>` : ''}
+            ${aiInter ? `<div><strong>Intermediate:</strong> ${aiInter} ${aiInterYear ? `| ${aiInterYear}` : ''} ${aiInterPercent ? `<span class="bg-gray-100 px-2 rounded text-[10px] font-bold">(${aiInterPercent})</span>` : ''}</div>` : ''}
+            ${aiSchool ? `<div><strong>School:</strong> ${aiSchool} ${aiSchoolYear ? `| ${aiSchoolYear}` : ''} ${aiSchoolPercent ? `<span class="bg-gray-100 px-2 rounded text-[10px] font-bold">(${aiSchoolPercent})</span>` : ''}</div>` : ''}
             ${(!aiDegree && !aiInter && !aiSchool) ? education : ''}
           </div>
         </div>
@@ -945,13 +992,17 @@ export default function App() {
         <div className="mt-auto flex flex-col gap-4">
           <button
             onClick={() => setIsDarkMode(!isDarkMode)}
-            className="p-3 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-all"
+            className="p-3 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-all group relative"
           >
             {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+            <span className="absolute left-full ml-4 px-2 py-1 bg-[#1A1A1A] dark:bg-white text-white dark:text-black text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap uppercase tracking-widest">
+              {isDarkMode ? 'Light Mode' : 'Dark Mode'}
+            </span>
           </button>
           {isValidResume && (
             <button 
-              onClick={exportToPDF}
+              type="button"
+              onClick={downloadPDF}
               className="p-3 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-all"
             >
               <Download size={20} />
@@ -969,28 +1020,59 @@ export default function App() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
+                className="max-w-[1600px] mx-auto"
               >
-                <form autoComplete="off" onSubmit={(e) => e.preventDefault()} className="space-y-12">
-                  {/* Hidden Inputs to stop Chrome Autofill */}
-                  <input type="text" style={{ display: 'none' }} />
-                  <input type="password" style={{ display: 'none' }} />
-                  
-                  <header className="flex justify-between items-start">
-                    <div>
-                      <h1 className="text-5xl font-serif font-light tracking-tight mb-2 dark:text-white">Resume Builder</h1>
-                      <p className="text-[#8E8E8E] dark:text-zinc-500 font-mono text-xs uppercase tracking-[0.3em]">Craft your professional narrative</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setIsClearModalOpen(true)}
-                      className="flex items-center gap-2 px-4 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-all text-[10px] font-bold uppercase tracking-widest border border-red-100 dark:border-red-500/20"
-                    >
-                      <Trash2 size={14} />
-                      Clear All
-                    </button>
-                  </header>
+                <div className="grid grid-cols-1 lg:grid-cols-[1.2fr,1fr] gap-12 items-start">
+                  {/* Left Column: Form Wizard */}
+                  <div className="space-y-12">
+                    <header className="flex justify-between items-start">
+                      <div>
+                        <h1 className="text-5xl font-serif font-light tracking-tight mb-2 dark:text-white">Resume Builder</h1>
+                        <p className="text-[#8E8E8E] dark:text-zinc-500 font-mono text-xs uppercase tracking-[0.3em]">Craft your professional narrative</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsClearModalOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-all text-[10px] font-bold uppercase tracking-widest border border-red-100 dark:border-red-500/20"
+                      >
+                        <Trash2 size={14} />
+                        Clear All
+                      </button>
+                    </header>
 
-                {/* AI Resume Generator Section */}
+                    {/* Step Navigation */}
+                    <div className="flex flex-wrap gap-2 sticky top-4 z-[40] bg-[#F8FAF9]/80 dark:bg-[#0F172A]/80 backdrop-blur-md p-2 rounded-2xl border border-white dark:border-zinc-800 shadow-sm">
+                      {[
+                        { id: 1, name: 'Personal', icon: User },
+                        { id: 2, name: 'Experience', icon: Briefcase },
+                        { id: 3, name: 'Skills & Projects', icon: Terminal },
+                        { id: 4, name: 'Finalize', icon: CheckCircle2 }
+                      ].map(s => (
+                        <button
+                          key={s.id}
+                          onClick={() => setCurrentStep(s.id)}
+                          className={cn(
+                            "flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all",
+                            currentStep === s.id 
+                              ? "bg-[#1A1A1A] text-white shadow-lg" 
+                              : "text-[#8E8E8E] hover:bg-white dark:hover:bg-zinc-800"
+                          )}
+                        >
+                          <s.icon size={14} />
+                          <span className="hidden sm:inline">{s.name}</span>
+                        </button>
+                      ))}
+                    </div>
+
+                    <form autoComplete="off" onSubmit={(e) => e.preventDefault()} className="space-y-12">
+                      {/* Hidden Inputs to stop Chrome Autofill */}
+                      <input type="text" style={{ display: 'none' }} />
+                      <input type="password" style={{ display: 'none' }} />
+
+                      {/* STEP 1: PERSONAL & AI */}
+                      {currentStep === 1 && (
+                        <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                          {/* AI Resume Generator Section */}
                 <section className="space-y-8 p-1 rounded-[40px] bg-gradient-to-br from-indigo-50/50 via-white to-purple-50/50 dark:from-zinc-800/20 dark:to-transparent">
                   <div className="flex items-center gap-4 border-b border-[#E5E5E5] dark:border-zinc-800 pb-2 px-8">
                     <Zap size={16} className="text-[#8E8E8E] dark:text-zinc-500" />
@@ -1013,7 +1095,7 @@ export default function App() {
                         {aiErrors.name && <p className="text-red-500 text-[10px] font-bold uppercase tracking-widest mt-1">{aiErrors.name}</p>}
                       </div>
                       <div className="space-y-4">
-                        <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Job Role</label>
+                        <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Job Role (Optional)</label>
                         <input 
                           value={aiRole}
                           list="job-role-suggestions"
@@ -1140,45 +1222,69 @@ export default function App() {
                           <input 
                             value={aiSchool}
                             onChange={(e) => setAiSchool(e.target.value)}
-                            placeholder="Example: ZPHS, Hyderabad"
+                            placeholder="School name"
                             className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 border-transparent focus:border-[#007BFF] outline-none transition-all text-sm dark:text-white mb-2"
                           />
-                          <input 
-                            value={aiSchoolPercent}
-                            onChange={(e) => setAiSchoolPercent(e.target.value)}
-                            placeholder="Percentage (e.g. 95%)"
-                            className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-3 rounded-xl border border-transparent focus:border-[#007BFF] outline-none transition-all text-[10px] dark:text-white"
-                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            <input 
+                              value={aiSchoolYear}
+                              onChange={(e) => setAiSchoolYear(e.target.value)}
+                              placeholder="Year"
+                              className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-3 rounded-xl border border-transparent focus:border-[#007BFF] outline-none transition-all text-[10px] dark:text-white"
+                            />
+                            <input 
+                              value={aiSchoolPercent}
+                              onChange={(e) => setAiSchoolPercent(e.target.value)}
+                              placeholder="Percentage / CGPA"
+                              className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-3 rounded-xl border border-transparent focus:border-[#007BFF] outline-none transition-all text-[10px] dark:text-white"
+                            />
+                          </div>
                         </div>
                         <div className="space-y-4">
-                          <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Intermediate / Polytechnic</label>
+                          <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">Intermediate</label>
                           <input 
                             value={aiInter}
                             onChange={(e) => setAiInter(e.target.value)}
-                            placeholder="Example: Narayana Junior College"
+                            placeholder="School / College Name"
                             className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 border-transparent focus:border-[#007BFF] outline-none transition-all text-sm dark:text-white mb-2"
                           />
-                          <input 
-                            value={aiInterPercent}
-                            onChange={(e) => setAiInterPercent(e.target.value)}
-                            placeholder="Percentage (e.g. 98%)"
-                            className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-3 rounded-xl border border-transparent focus:border-[#007BFF] outline-none transition-all text-[10px] dark:text-white"
-                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            <input 
+                              value={aiInterYear}
+                              onChange={(e) => setAiInterYear(e.target.value)}
+                              placeholder="Year"
+                              className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-3 rounded-xl border border-transparent focus:border-[#007BFF] outline-none transition-all text-[10px] dark:text-white"
+                            />
+                            <input 
+                              value={aiInterPercent}
+                              onChange={(e) => setAiInterPercent(e.target.value)}
+                              placeholder="Percentage / CGPA"
+                              className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-3 rounded-xl border border-transparent focus:border-[#007BFF] outline-none transition-all text-[10px] dark:text-white"
+                            />
+                          </div>
                         </div>
                         <div className="space-y-4">
                           <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500 font-bold">B.Tech / Degree</label>
                           <input 
                             value={aiDegree}
                             onChange={(e) => setAiDegree(e.target.value)}
-                            placeholder="Example: JNTU, Computer Science"
+                            placeholder="College Name"
                             className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 border-transparent focus:border-[#007BFF] outline-none transition-all text-sm dark:text-white mb-2"
                           />
-                          <input 
-                            value={aiBtechPercent}
-                            onChange={(e) => setAiBtechPercent(e.target.value)}
-                            placeholder="Percentage / CGPA (e.g. 8.5)"
-                            className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-3 rounded-xl border border-transparent focus:border-[#007BFF] outline-none transition-all text-[10px] dark:text-white"
-                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            <input 
+                              value={aiDegreeYear}
+                              onChange={(e) => setAiDegreeYear(e.target.value)}
+                              placeholder="Year"
+                              className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-3 rounded-xl border border-transparent focus:border-[#007BFF] outline-none transition-all text-[10px] dark:text-white"
+                            />
+                            <input 
+                              value={aiBtechPercent}
+                              onChange={(e) => setAiBtechPercent(e.target.value)}
+                              placeholder="CGPA"
+                              className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-3 rounded-xl border border-transparent focus:border-[#007BFF] outline-none transition-all text-[10px] dark:text-white"
+                            />
+                          </div>
                         </div>
                       </div>
 
@@ -1305,31 +1411,31 @@ export default function App() {
                               if (aiDegree) {
                                 newEducation.push({
                                   id: crypto.randomUUID(),
-                                  school: aiDegree.split(',')[0].trim(),
+                                  school: aiDegree,
                                   degree: 'B.Tech / Degree',
-                                  year: '2024',
+                                  year: aiDegreeYear || '2024',
                                   percentage: aiBtechPercent,
-                                  description: aiDegree
+                                  description: ''
                                 });
                               }
                               if (aiInter) {
                                 newEducation.push({
                                   id: crypto.randomUUID(),
-                                  school: aiInter.split(',')[0].trim(),
-                                  degree: 'Intermediate / Polytechnic',
-                                  year: '2020',
+                                  school: aiInter,
+                                  degree: 'Intermediate',
+                                  year: aiInterYear || '2020',
                                   percentage: aiInterPercent,
-                                  description: aiInter
+                                  description: ''
                                 });
                               }
                               if (aiSchool) {
                                 newEducation.push({
                                   id: crypto.randomUUID(),
-                                  school: aiSchool.split(',')[0].trim(),
-                                  degree: 'High School (SSC)',
-                                  year: '2018',
+                                  school: aiSchool,
+                                  degree: 'School (SSC)',
+                                  year: aiSchoolYear || '2018',
                                   percentage: aiSchoolPercent,
-                                  description: aiSchool
+                                  description: ''
                                 });
                               }
                               
@@ -1416,40 +1522,40 @@ export default function App() {
                                 setProjects([newProj, ...projects]);
                               }
 
-                              const newEducation: Education[] = [];
+                              const newEduList: Education[] = [];
                               if (aiDegree) {
-                                newEducation.push({
+                                newEduList.push({
                                   id: crypto.randomUUID(),
-                                  school: aiDegree.split(',')[0].trim(),
+                                  school: aiDegree,
                                   degree: 'B.Tech / Degree',
-                                  year: '2024',
+                                  year: aiDegreeYear || '2024',
                                   percentage: aiBtechPercent,
-                                  description: aiDegree
+                                  description: ''
                                 });
                               }
                               if (aiInter) {
-                                newEducation.push({
+                                newEduList.push({
                                   id: crypto.randomUUID(),
-                                  school: aiInter.split(',')[0].trim(),
-                                  degree: 'Intermediate / Polytechnic',
-                                  year: '2020',
+                                  school: aiInter,
+                                  degree: 'Intermediate',
+                                  year: aiInterYear || '2020',
                                   percentage: aiInterPercent,
-                                  description: aiInter
+                                  description: ''
                                 });
                               }
                               if (aiSchool) {
-                                newEducation.push({
+                                newEduList.push({
                                   id: crypto.randomUUID(),
-                                  school: aiSchool.split(',')[0].trim(),
-                                  degree: 'High School (SSC)',
-                                  year: '2018',
+                                  school: aiSchool,
+                                  degree: 'School (SSC)',
+                                  year: aiSchoolYear || '2018',
                                   percentage: aiSchoolPercent,
-                                  description: aiSchool
+                                  description: ''
                                 });
                               }
                               
-                              if (newEducation.length > 0) {
-                                setEducation([...newEducation, ...education]);
+                              if (newEduList.length > 0) {
+                                setEducation([...newEduList, ...education]);
                               } else if (aiEducation) {
                                 const newEdu: Education = {
                                   id: crypto.randomUUID(),
@@ -1504,7 +1610,7 @@ export default function App() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       {[
                         { label: 'Full Name', name: 'fullName', placeholder: 'John Doe' },
-                        { label: 'Job Title', name: 'role', placeholder: 'Software Engineer' },
+                        { label: 'Job Title (Optional)', name: 'role', placeholder: 'Software Engineer' },
                         { label: 'Email', name: 'email', placeholder: 'john@example.com' },
                         { label: 'Phone', name: 'phone', placeholder: '+1 234 567 890' },
                         { label: 'LinkedIn', name: 'linkedin', placeholder: 'linkedin.com/in/...' },
@@ -1532,19 +1638,36 @@ export default function App() {
 
                   {/* Professional Summary */}
                   <div className="card p-8 border border-[#E5E5E5] dark:border-zinc-800 space-y-4 bg-white dark:bg-zinc-900 shadow-sm transition-all">
-                    <h3 className="text-sm font-bold uppercase tracking-widest flex items-center gap-3 dark:text-white">
-                      <Sparkles size={16} className="text-amber-500" />
-                      Professional Summary
-                    </h3>
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-sm font-bold uppercase tracking-widest flex items-center gap-3 dark:text-white">
+                        <Sparkles size={16} className="text-amber-500" />
+                        Professional Summary
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => polishText('summary', formData.summary)}
+                        disabled={isPolishing === 'summary' || !formData.summary}
+                        className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-blue-500 hover:text-blue-600 transition-all disabled:opacity-50"
+                      >
+                        {isPolishing === 'summary' ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                        Magic Polish
+                      </button>
+                    </div>
                     <textarea 
                       name="summary" 
                       value={formData.summary} 
                       onChange={handleInputChange} 
-                      placeholder="Write a compelling professional summary..." 
+                      placeholder="Professional Summary" 
                       className="w-full h-32 bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl border-b-2 border-transparent focus:border-[#007BFF] outline-none transition-all text-sm resize-none dark:text-white" 
                     />
                   </div>
+                </section>
+              </div>
+            )}
 
+              {/* STEP 2: EXPERIENCE & EDUCATION */}
+              {currentStep === 2 && (
+                <div className="space-y-12 animate-in fade-in slide-in-from-right-4 duration-500">
                   {/* Experience Section */}
                   <div className="card p-8 border border-[#E5E5E5] dark:border-zinc-800 space-y-8 bg-white dark:bg-zinc-900 shadow-sm transition-all">
                     <div className="flex justify-between items-center">
@@ -1576,7 +1699,18 @@ export default function App() {
                             <input value={exp.duration} onChange={(e) => updateExperience(exp.id, 'duration', e.target.value)} placeholder="2020 - Present" className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none text-sm dark:text-white" />
                           </div>
                           <div className="space-y-2 md:col-span-2">
-                            <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Responsibilities</label>
+                            <div className="flex justify-between items-center mb-1">
+                              <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Responsibilities</label>
+                              <button
+                                type="button"
+                                onClick={() => polishText(`exp-${exp.id}`, exp.description)}
+                                disabled={isPolishing === `exp-${exp.id}` || !exp.description}
+                                className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-blue-500 hover:text-blue-600 transition-all disabled:opacity-50"
+                              >
+                                {isPolishing === `exp-${exp.id}` ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                                Magic Polish
+                              </button>
+                            </div>
                             <textarea value={exp.description} onChange={(e) => updateExperience(exp.id, 'description', e.target.value)} placeholder="What did you achieve? Use bullet points..." className="w-full h-32 bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none resize-none text-sm dark:text-white" />
                           </div>
                         </motion.div>
@@ -1603,20 +1737,20 @@ export default function App() {
                             <Trash2 size={14} />
                           </button>
                           <div className="space-y-2">
-                            <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Degree</label>
-                            <input value={edu.degree} onChange={(e) => updateEducation(edu.id, 'degree', e.target.value)} placeholder="B.Tech Computer Science" className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none text-sm dark:text-white" />
+                            <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Degree / Course</label>
+                            <input value={edu.degree} onChange={(e) => updateEducation(edu.id, 'degree', e.target.value)} placeholder="e.g., B.Tech / Intermediate" className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none text-sm dark:text-white" />
                           </div>
                           <div className="space-y-2">
-                            <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">College / University</label>
-                            <input value={edu.school} onChange={(e) => updateEducation(edu.id, 'school', e.target.value)} placeholder="MIT / Stanford / etc." className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none text-sm dark:text-white" />
+                            <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">College / School Name</label>
+                            <input value={edu.school} onChange={(e) => updateEducation(edu.id, 'school', e.target.value)} placeholder="e.g., Harvard / High School" className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none text-sm dark:text-white" />
                           </div>
                           <div className="space-y-2">
-                            <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Year</label>
-                            <input value={edu.year} onChange={(e) => updateEducation(edu.id, 'year', e.target.value)} placeholder="2024" className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none text-sm dark:text-white" />
+                            <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Passing Year</label>
+                            <input value={edu.year} onChange={(e) => updateEducation(edu.id, 'year', e.target.value)} placeholder="e.g., 2024" className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none text-sm dark:text-white" />
                           </div>
                           <div className="space-y-2">
-                            <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Percentage / CGPA</label>
-                            <input value={edu.percentage || ''} onChange={(e) => updateEducation(edu.id, 'percentage', e.target.value)} placeholder="8.5 CGPA" className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none text-sm dark:text-white" />
+                            <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">CGPA / Percentage</label>
+                            <input value={edu.percentage || ''} onChange={(e) => updateEducation(edu.id, 'percentage', e.target.value)} placeholder="e.g., 8.5 CGPA / 85%" className="w-full bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none text-sm dark:text-white" />
                           </div>
                           <div className="space-y-2 md:col-span-2">
                             <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Description</label>
@@ -1626,7 +1760,12 @@ export default function App() {
                       ))}
                     </div>
                   </div>
+                </div>
+              )}
 
+              {/* STEP 3: SKILLS & PROJECTS */}
+              {currentStep === 3 && (
+                <div className="space-y-12 animate-in fade-in slide-in-from-right-4 duration-500">
                   {/* Skills Section */}
                   <div className="card p-8 border border-[#E5E5E5] dark:border-zinc-800 space-y-8 bg-white dark:bg-zinc-900 shadow-sm transition-all">
                     <div className="flex justify-between items-center">
@@ -1650,10 +1789,10 @@ export default function App() {
                           </div>
                           <div className="flex flex-wrap gap-4 px-2">
                             {category.skills.map(skill => (
-                              <div key={skill.id} className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 px-4 py-2 rounded-full group">
-                                <input value={skill.name} onChange={(e) => updateSkill(category.id, skill.id, 'name', e.target.value)} placeholder="Skill name" className="bg-transparent outline-none text-xs w-24 text-zinc-900 dark:text-white" />
-                                <button type="button" onClick={() => removeSkillFromCategory(category.id, skill.id)} className="opacity-0 group-hover:opacity-100 text-red-500 transition-all">
-                                  <Trash2 size={12} />
+                              <div key={skill.id} className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 pl-4 pr-2 py-2 rounded-full group transition-all hover:bg-zinc-200 dark:hover:bg-zinc-700">
+                                <input value={skill.name} onChange={(e) => updateSkill(category.id, skill.id, 'name', e.target.value)} placeholder="Skill name" className="bg-transparent outline-none text-xs w-24 text-zinc-900 dark:text-white font-medium" />
+                                <button type="button" onClick={() => removeSkillFromCategory(category.id, skill.id)} className="text-zinc-400 hover:text-red-500 transition-all p-1">
+                                  <X size={12} strokeWidth={3} />
                                 </button>
                               </div>
                             ))}
@@ -1695,14 +1834,30 @@ export default function App() {
                             </div>
                           </div>
                           <div className="space-y-2">
-                            <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Description</label>
+                            <div className="flex justify-between items-center mb-1">
+                              <label className="text-[10px] uppercase tracking-widest text-[#8E8E8E] font-bold">Description</label>
+                              <button
+                                type="button"
+                                onClick={() => polishText(`proj-${proj.id}`, proj.description)}
+                                disabled={isPolishing === `proj-${proj.id}` || !proj.description}
+                                className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-blue-500 hover:text-blue-600 transition-all disabled:opacity-50"
+                              >
+                                {isPolishing === `proj-${proj.id}` ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                                Magic Polish
+                              </button>
+                            </div>
                             <textarea value={proj.description} onChange={(e) => updateProject(proj.id, 'description', e.target.value)} placeholder="What did you build? Tools used?" className="w-full h-32 bg-[#F5F5F4] dark:bg-zinc-800 p-4 rounded-2xl outline-none resize-none text-sm dark:text-white" />
                           </div>
                         </motion.div>
                       ))}
                     </div>
                   </div>
+                </div>
+              )}
 
+              {/* STEP 4: FINALIZE */}
+              {currentStep === 4 && (
+                <div className="space-y-12 animate-in fade-in slide-in-from-right-4 duration-500">
                   {/* Certifications Section */}
                   <div className="card p-8 border border-[#E5E5E5] dark:border-zinc-800 space-y-8 bg-white dark:bg-zinc-900 shadow-sm transition-all">
                     <div className="flex justify-between items-center">
@@ -1770,7 +1925,6 @@ export default function App() {
                       Generate & Download Resume
                     </button>
                   </div>
-                </section>
 
                 <div className="pt-12 flex flex-col gap-6">
                   {atsScoreResult !== null && (
@@ -1813,6 +1967,68 @@ export default function App() {
                     </div>
                   )}
 
+                  {/* Drag & Drop Layout Builder */}
+                  <div className="card p-8 border border-[#E5E5E5] dark:border-zinc-800 space-y-8 bg-white dark:bg-zinc-900 shadow-sm transition-all mb-8">
+                    <div className="flex items-center gap-3">
+                      <Layers size={16} className="text-blue-500" />
+                      <h3 className="text-sm font-bold uppercase tracking-widest dark:text-white">Configure Resume Layout</h3>
+                    </div>
+                    <p className="text-[10px] text-zinc-500 font-medium uppercase tracking-widest leading-relaxed">Customize the hierarchy of your resume sections. Your changes reflect instantly in the preview.</p>
+                    
+                    <div className="space-y-3">
+                      {sectionsOrder.map((sectionId, index) => {
+                        const iconMap: any = {
+                          summary: FileText,
+                          experience: Briefcase,
+                          education: GraduationCap,
+                          skills: Wrench,
+                          projects: Cpu,
+                          certifications: CheckCircle2,
+                          custom: Layers
+                        };
+                        const Icon = iconMap[sectionId] || Layers;
+                        
+                        return (
+                          <motion.div 
+                            key={sectionId}
+                            layout
+                            className="flex items-center justify-between p-4 bg-[#F5F5F4] dark:bg-zinc-800 rounded-2xl border border-transparent hover:border-zinc-200 dark:hover:border-zinc-700 transition-all group"
+                          >
+                            <div className="flex items-center gap-4">
+                              <span className="text-[10px] font-mono text-zinc-400 w-4">{index + 1}</span>
+                              <div className="p-2 bg-white dark:bg-zinc-900 rounded-lg shadow-sm">
+                                <Icon size={14} className="text-zinc-600 dark:text-zinc-400 transition-colors group-hover:text-blue-500" />
+                              </div>
+                              <span className="text-xs font-bold uppercase tracking-widest dark:text-zinc-300">
+                                {sectionId}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                              <button
+                                type="button"
+                                onClick={() => moveSection(index, -1)}
+                                title="Move Up"
+                                className="p-2 hover:bg-white dark:hover:bg-zinc-700 rounded-lg transition-all disabled:opacity-20 text-zinc-600 dark:text-zinc-400"
+                                disabled={index === 0}
+                              >
+                                <ChevronLeft size={16} className="rotate-90" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveSection(index, 1)}
+                                title="Move Down"
+                                className="p-2 hover:bg-white dark:hover:bg-zinc-700 rounded-lg transition-all disabled:opacity-20 text-zinc-600 dark:text-zinc-400"
+                                disabled={index === sectionsOrder.length - 1}
+                              >
+                                <ChevronRight size={16} className="rotate-90" />
+                              </button>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   <div className="flex gap-4">
                     <button 
                       type="button"
@@ -1841,9 +2057,159 @@ export default function App() {
                     </button>
                   </div>
                 </div>
-                </form>
-              </motion.div>
+              </div>
             )}
+
+              {/* Step Navigation Buttons */}
+              <div className="flex justify-between items-center pt-8 border-t border-zinc-100 dark:border-zinc-800">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCurrentStep(prev => Math.max(1, prev - 1));
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                        disabled={currentStep === 1}
+                        className="px-6 py-3 border border-zinc-200 dark:border-zinc-800 rounded-xl text-[10px] font-bold uppercase tracking-widest disabled:opacity-30 disabled:cursor-not-allowed hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all flex items-center gap-2 dark:text-zinc-400"
+                      >
+                        <ChevronLeft size={14} />
+                        Previous
+                      </button>
+                      <div className="flex gap-2">
+                        {currentStep < 4 ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (currentStep === 1) {
+                                if (!validateManualForm()) return;
+                              }
+                              setCurrentStep(prev => Math.min(4, prev + 1));
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }}
+                            className="px-8 py-3 bg-[#1A1A1A] text-white dark:bg-white dark:text-black rounded-xl text-[10px] font-bold uppercase tracking-widest hover:scale-105 active:scale-95 transition-all flex items-center gap-2 shadow-lg"
+                          >
+                            Next
+                            <ChevronRight size={14} />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('preview')}
+                            className="px-8 py-3 bg-blue-600 text-white rounded-xl text-[10px] font-bold uppercase tracking-widest hover:scale-105 active:scale-95 transition-all flex items-center gap-2 shadow-lg"
+                          >
+                            View Final Resume
+                            <CheckCircle2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </form>
+                </div>
+
+                {/* Right Column: Mini-Live Preview */}
+                <div className="hidden lg:block sticky top-8 space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                      <h3 className="text-[10px] font-bold uppercase tracking-widest text-[#8E8E8E] dark:text-zinc-500">
+                        Live Preview (A4)
+                      </h3>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <select 
+                        value={selectedTemplate}
+                        onChange={(e) => setSelectedTemplate(e.target.value)}
+                        className="bg-transparent text-[10px] font-bold uppercase tracking-widest outline-none cursor-pointer dark:text-white"
+                      >
+                        <option value="executive">Executive</option>
+                        <option value="modern">Modern</option>
+                        <option value="minimal">Minimal</option>
+                        <option value="professional">Professional</option>
+                      </select>
+                      <div className="flex items-center gap-2 border-l border-zinc-200 dark:border-zinc-800 pl-4 h-4">
+                        <span className="text-[10px] font-mono opacity-50 dark:text-zinc-400">{Math.round(previewScale * 100)}%</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-zinc-100 dark:bg-zinc-900/50 rounded-[40px] p-8 border border-zinc-200 dark:border-zinc-800 flex justify-center items-start overflow-hidden h-[calc(100vh-140px)] shadow-inner">
+                    <div 
+                      className="transition-transform duration-300 ease-out"
+                      style={{ 
+                        transform: `scale(${previewScale * 0.65})`, 
+                        transformOrigin: 'top center'
+                      }}
+                    >
+                      <div 
+                        className={cn(
+                          "bg-white shadow-2xl rounded-sm mx-auto print:shadow-none print:m-0 overflow-hidden resume-container",
+                          selectedTemplate
+                        )}
+                        style={{ 
+                          width: '210mm',
+                          height: '297mm',
+                          margin: '0 auto',
+                          position: 'relative',
+                          boxSizing: 'border-box'
+                        }}
+                      >
+                        <div className="p-10 h-full overflow-hidden flex flex-col pointer-events-none select-none">
+                          {/* We render a simplified high-level view that updates instantly */}
+                          <div className="flex-1 overflow-hidden">
+                            <div className="text-center border-b pb-6 mb-6">
+                              <h1 className="text-2xl font-bold uppercase tracking-tight">{(previewData || formData).fullName || "NAME"}</h1>
+                              <p className={cn("text-[10px]", selectedTemplate === 'modern' ? "text-blue-600" : "text-zinc-600 font-serif italic")}>{(previewData || formData).role}</p>
+                            </div>
+                            
+                            <div className="space-y-6">
+                              {sectionsOrder.map((sectionId) => {
+                                if (sectionId === 'summary' && (previewData || formData).summary) {
+                                  return (
+                                    <div key={sectionId} className="space-y-1">
+                                      <h4 className={cn("text-[8px] font-bold uppercase tracking-widest opacity-40", selectedTemplate === 'modern' ? "border-l-2 border-blue-600 pl-2" : "border-b")}>Summary</h4>
+                                      <p className="text-[9px] line-clamp-2 italic leading-relaxed">{(previewData || formData).summary}</p>
+                                    </div>
+                                  );
+                                }
+                                if (sectionId === 'experience' && experience.length > 0) {
+                                  return (
+                                    <div key={sectionId} className="space-y-2">
+                                      <h4 className={cn("text-[8px] font-bold uppercase tracking-widest opacity-40", selectedTemplate === 'modern' ? "border-l-2 border-blue-600 pl-2" : "border-b")}>Experience</h4>
+                                      {experience.slice(0, 2).map(exp => (
+                                        <div key={exp.id} className="text-[9px]">
+                                          <p className="font-bold">{exp.role}</p>
+                                          <p className="opacity-60">{exp.company}</p>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  );
+                                }
+                                if (sectionId === 'skills' && skillCategories.length > 0) {
+                                  return (
+                                    <div key={sectionId} className="space-y-2">
+                                      <h4 className={cn("text-[8px] font-bold uppercase tracking-widest opacity-40", selectedTemplate === 'modern' ? "border-l-2 border-blue-600 pl-2" : "border-b")}>Skills</h4>
+                                      <div className="flex flex-wrap gap-1">
+                                        {skillCategories.flatMap(c => c.skills).slice(0, 8).map(s => (
+                                          <span key={s.id} className="bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded-full text-[7px]">{s.name}</span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })}
+                            </div>
+                          </div>
+                          <div className="mt-auto pt-6 text-[8px] text-center border-t border-zinc-100 font-mono text-zinc-300">
+                             LIVE EDIT PREVIEW • SINGLE PAGE A4
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
 
             {activeTab === 'preview' && (
               <motion.div 
@@ -1881,37 +2247,71 @@ export default function App() {
                     <option value="professional">Professional</option>
                     <option value="modern">Modern</option>
                     <option value="minimal">Minimal</option>
+                    <option value="executive">Executive</option>
                     <option value="creative">Creative</option>
                     <option value="corporate">Corporate</option>
                     <option value="elegant">Elegant</option>
                     <option value="sidebar">Sidebar</option>
                   </select>
+                  <div className="flex items-center gap-3 px-4 py-2 bg-[#F5F5F4] dark:bg-zinc-800 rounded-xl">
+                    <span className="text-[10px] font-bold uppercase tracking-widest opacity-50 dark:text-zinc-400">Zoom</span>
+                    <input 
+                      type="range" 
+                      min="0.5" 
+                      max="1.5" 
+                      step="0.05" 
+                      value={previewScale} 
+                      onChange={(e) => setPreviewScale(parseFloat(e.target.value))}
+                      className="w-24 accent-[#1A1A1A] dark:accent-white"
+                    />
+                    <span className="text-[10px] font-mono w-8">{Math.round(previewScale * 100)}%</span>
+                  </div>
+                  <div className="flex items-center gap-3 px-4 py-2 bg-[#F5F5F4] dark:bg-zinc-800 rounded-xl">
+                    <span className="text-[10px] font-bold uppercase tracking-widest opacity-50 dark:text-zinc-400">Spacing</span>
+                    <input 
+                      type="range" 
+                      min="1" 
+                      max="12" 
+                      step="1" 
+                      value={resumeSpacing} 
+                      onChange={(e) => setResumeSpacing(parseInt(e.target.value))}
+                      className="w-24 accent-[#1A1A1A] dark:accent-white"
+                    />
+                    <span className="text-[10px] font-mono w-4">{resumeSpacing}</span>
+                  </div>
                   <button 
-                    onClick={exportToPDF}
-                    disabled={isExporting}
-                    className="flex items-center gap-2 px-6 py-3 bg-[#1A1A1A] text-white rounded-xl font-bold uppercase text-[10px] tracking-widest hover:scale-105 transition-all shadow-lg disabled:opacity-50"
+                    type="button"
+                    onClick={downloadPDF}
+                    className="flex items-center gap-2 px-6 py-3 bg-[#1A1A1A] text-white rounded-xl font-bold uppercase text-[10px] tracking-widest hover:scale-105 transition-all shadow-lg"
                   >
-                    {isExporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-                    {isExporting ? "Generating..." : "Download PDF"}
+                    <Download size={14} />
+                    Download PDF
                   </button>
                 </div>
 
                 {/* Resume Preview Container */}
-                <div 
-                  id="resume"
-                  className={cn(
-                    "bg-white shadow-2xl rounded-sm mx-auto print:shadow-none print:m-0 overflow-hidden resume-container",
-                    selectedTemplate
-                  )}
-                  style={{ 
-                    maxWidth: '900px',
-                    minHeight: '297mm'
-                  }}
-                >
-                  <div className="p-[25px]">
+                <div className="relative group mx-auto" style={{ width: '210mm', height: '297mm', transform: `scale(${previewScale})`, transformOrigin: 'top center' }}>
+                  <div 
+                    id="resume"
+                    className={cn(
+                      "bg-white shadow-2xl rounded-sm mx-auto print:shadow-none print:m-0 overflow-hidden resume-container",
+                      selectedTemplate
+                    )}
+                    style={{ 
+                      width: '210mm',
+                      height: '297mm',
+                      margin: '0 auto',
+                      position: 'relative',
+                      boxSizing: 'border-box'
+                    }}
+                  >
+                  <div className="p-[25px] h-full overflow-hidden">
                     {/* Modular Template Rendering */}
                     {selectedTemplate === 'modern' ? (
-                      <div className="space-y-8">
+                      <div 
+                        className="h-full flex flex-col"
+                        style={{ gap: `${resumeSpacing * 2}px` }}
+                      >
                         <header className="text-center border-b-2 border-zinc-100 pb-8">
                           <h1 className="text-3xl font-bold uppercase tracking-tight mb-2">
                             {(previewData || formData).fullName || "Your Name"}
@@ -1925,49 +2325,260 @@ export default function App() {
                           </div>
                         </header>
 
-                        {(previewData || formData).summary && (
-                          <section>
-                            <h2 className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-3 border-l-4 border-blue-600 pl-3">Summary</h2>
-                            <p className="text-sm leading-relaxed text-zinc-700">{(previewData || formData).summary}</p>
-                          </section>
-                        )}
+                        <div className="space-y-6">
+                        {sectionsOrder.map((sectionId) => {
+                          const data = previewData || formData;
+                          
+                          if (sectionId === 'summary' && data.summary) {
+                            return (
+                              <section key={sectionId}>
+                                <h2 className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-3 border-l-4 border-blue-600 pl-3">Summary</h2>
+                                <p className="text-sm leading-relaxed text-zinc-700">{data.summary}</p>
+                              </section>
+                            );
+                          }
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                          {experience.length > 0 && (
-                            <section className="space-y-4">
-                              <h2 className="text-xs font-bold text-blue-600 uppercase tracking-widest border-l-4 border-blue-600 pl-3">Experience</h2>
-                              {experience.map(exp => (
-                                <div key={exp.id} className="space-y-1">
-                                  <h3 className="text-sm font-bold text-zinc-900">{exp.role}</h3>
-                                  <p className="text-[10px] text-zinc-500 font-bold uppercase">{exp.company} | {exp.duration}</p>
-                                  <p className="text-xs text-zinc-600 line-clamp-3">{exp.description}</p>
-                                </div>
-                              ))}
-                            </section>
-                          )}
-
-                          <div className="space-y-8">
-                            <section className="space-y-4">
-                              <h2 className="text-xs font-bold text-blue-600 uppercase tracking-widest border-l-4 border-blue-600 pl-3">Skills</h2>
-                              <div className="flex flex-wrap gap-2">
-                                {skillCategories.flatMap(c => c.skills).map(s => (
-                                  <span key={s.id} className="bg-zinc-100 text-[10px] px-3 py-1 rounded-full font-medium text-zinc-700">{s.name}</span>
-                                ))}
-                              </div>
-                            </section>
-
-                            {education.length > 0 && (
-                              <section className="space-y-4">
-                                <h2 className="text-xs font-bold text-blue-600 uppercase tracking-widest border-l-4 border-blue-600 pl-3">Education</h2>
-                                {education.map(edu => (
-                                  <div key={edu.id}>
-                                    <h3 className="text-sm font-bold">{edu.degree}</h3>
-                                    <p className="text-xs text-zinc-500">{edu.school} ({edu.year})</p>
+                          if (sectionId === 'experience' && experience.length > 0) {
+                            return (
+                              <section key={sectionId} className="space-y-4">
+                                <h2 className="text-xs font-bold text-blue-600 uppercase tracking-widest border-l-4 border-blue-600 pl-3">Experience</h2>
+                                {experience.map(exp => (
+                                  <div key={exp.id} className="space-y-1">
+                                    <div className="flex justify-between items-baseline">
+                                      <h3 className="text-sm font-bold text-zinc-900">{exp.role}</h3>
+                                      <span className="text-[9px] text-zinc-400 font-bold uppercase">{exp.duration}</span>
+                                    </div>
+                                    <p className="text-[10px] text-zinc-500 font-bold uppercase">{exp.company}</p>
+                                    <p className="text-xs text-zinc-600">{exp.description}</p>
                                   </div>
                                 ))}
                               </section>
-                            )}
+                            );
+                          }
+
+                          if (sectionId === 'education' && education.length > 0) {
+                            return (
+                              <section key={sectionId} className="space-y-4">
+                                <h2 className="text-xs font-bold text-blue-600 uppercase tracking-widest border-l-4 border-blue-600 pl-3">Education</h2>
+                                {education.map(edu => (
+                                  <div key={edu.id} className="flex justify-between items-baseline">
+                                    <div className="flex-1">
+                                      <h3 className="text-sm font-bold">{edu.degree}</h3>
+                                      <p className="text-xs text-zinc-500 font-medium">{edu.school}</p>
+                                      {edu.percentage && (
+                                        <p className="text-[10px] text-blue-500 font-bold mt-1 uppercase tracking-tight">Grade: {edu.percentage}</p>
+                                      )}
+                                    </div>
+                                    <span className="text-[10px] text-zinc-400 font-bold uppercase">{edu.year}</span>
+                                  </div>
+                                ))}
+                              </section>
+                            );
+                          }
+
+                          if (sectionId === 'skills' && skillCategories.length > 0) {
+                            return (
+                              <section key={sectionId} className="space-y-3">
+                                <h2 className="text-xs font-bold text-blue-600 uppercase tracking-widest border-l-4 border-blue-600 pl-3">Skills</h2>
+                                <div className="flex flex-wrap gap-2">
+                                  {skillCategories.flatMap(c => c.skills).map(s => (
+                                    <span key={s.id} className="bg-zinc-100 text-[10px] px-3 py-1 rounded-full font-medium text-zinc-700">{s.name}</span>
+                                  ))}
+                                </div>
+                              </section>
+                            );
+                          }
+
+                          if (sectionId === 'projects' && projects.length > 0) {
+                            return (
+                              <section key={sectionId} className="space-y-4">
+                                <h2 className="text-xs font-bold text-blue-600 uppercase tracking-widest border-l-4 border-blue-600 pl-3">Projects</h2>
+                                {projects.map(proj => (
+                                  <div key={proj.id} className="space-y-1">
+                                    <h3 className="text-sm font-bold">{proj.title}</h3>
+                                    <p className="text-[10px] text-zinc-400 uppercase font-bold">{proj.tech}</p>
+                                    <p className="text-xs text-zinc-600">{proj.description}</p>
+                                  </div>
+                                ))}
+                              </section>
+                            );
+                          }
+
+                          if (sectionId === 'certifications' && certificates.length > 0 && certificates[0]) {
+                            return (
+                              <section key={sectionId} className="space-y-3">
+                                <h2 className="text-xs font-bold text-blue-600 uppercase tracking-widest border-l-4 border-blue-600 pl-3">Certifications</h2>
+                                <ul className="list-disc ml-4 space-y-1">
+                                  {certificates.map((cert, i) => cert ? (
+                                    <li key={i} className="text-sm text-zinc-700">{cert}</li>
+                                  ) : null)}
+                                </ul>
+                              </section>
+                            );
+                          }
+
+                          if (sectionId === 'custom' && customSections.length > 0) {
+                            return customSections.map(cs => cs.title && cs.content ? (
+                              <section key={cs.id} className="space-y-3">
+                                <h2 className="text-xs font-bold text-blue-600 uppercase tracking-widest border-l-4 border-blue-600 pl-3">{cs.title}</h2>
+                                <p className="text-sm text-zinc-700 whitespace-pre-wrap">{cs.content}</p>
+                              </section>
+                            ) : null);
+                          }
+                          
+                          return null;
+                        })}
+                        </div>
+                      </div>
+                    ) : selectedTemplate === 'executive' ? (
+                      <div 
+                        className="text-[#1A1A1A] text-[11px] leading-[1.4] h-full flex flex-col"
+                        style={{ gap: `${resumeSpacing * 2}px` }}
+                      >
+                        {/* HEADER */}
+                        <div className="text-center space-y-1.5 border-b-2 border-zinc-900 pb-4">
+                          <h1 className="text-3xl font-bold uppercase tracking-tight text-zinc-900">
+                            {(previewData || formData).fullName || "Your Name"}
+                          </h1>
+                          <div className="flex flex-wrap justify-center gap-x-4 gap-y-0.5 text-zinc-600 font-medium text-[10px]">
+                            <span className="flex items-center gap-1.5 underline decoration-zinc-200 underline-offset-4">{(previewData || formData).email}</span>
+                            <span className="flex items-center gap-1.5">{(previewData || formData).phone}</span>
+                            { (previewData || formData).linkedin && <span className="flex items-center gap-1.5 italic font-serif">linkedin.com/in/{(previewData || formData).linkedin.split('/').pop()}</span> }
+                            { (previewData || formData).github && <span className="flex items-center gap-1.5 italic font-serif">github.com/{(previewData || formData).github.split('/').pop()}</span> }
                           </div>
+                        </div>
+
+                        <div className="space-y-6">
+                        {sectionsOrder.map((sectionId) => {
+                          const data = previewData || formData;
+
+                          if (sectionId === 'summary' && data.summary) {
+                            return (
+                              <section key={sectionId}>
+                                <h2 className="font-bold border-b border-zinc-300 pb-0.5 mb-2 uppercase text-[9px] tracking-[0.2em] text-zinc-500">Professional Summary</h2>
+                                <p className="text-zinc-700 leading-relaxed indent-4">{data.summary}</p>
+                              </section>
+                            );
+                          }
+
+                          if (sectionId === 'skills' && skillCategories.length > 0) {
+                            return (
+                              <section key={sectionId}>
+                                <h2 className="font-bold border-b border-zinc-300 pb-0.5 mb-2 uppercase text-[9px] tracking-[0.2em] text-zinc-500">Core Competencies</h2>
+                                <div className="grid grid-cols-2 gap-x-8 gap-y-1.5">
+                                  {skillCategories.map(cat => (
+                                    <div key={cat.id} className="flex flex-col">
+                                      <span className="text-[8px] uppercase font-bold text-zinc-400 tracking-wider font-mono">{cat.name}</span>
+                                      <span className="text-zinc-700 font-medium">{(cat.skills || []).map(s => s.name).join(", ")}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </section>
+                            );
+                          }
+
+                          if (sectionId === 'experience' && experience.length > 0) {
+                            return (
+                              <section key={sectionId}>
+                                <h2 className="font-bold border-b border-zinc-300 pb-0.5 mb-3 uppercase text-[9px] tracking-[0.2em] text-zinc-500">Professional Experience</h2>
+                                <div className="space-y-4">
+                                  {experience.map(exp => (
+                                    <div key={exp.id}>
+                                      <div className="flex justify-between items-end mb-0.5">
+                                        <div className="flex flex-col">
+                                          <h3 className="font-bold text-zinc-900 text-[13px] leading-tight">{exp.role}</h3>
+                                          <span className="text-zinc-500 italic font-serif text-[12px]">{exp.company}</span>
+                                        </div>
+                                        <span className="text-[9px] text-zinc-400 font-mono tracking-widest uppercase mb-1">{exp.duration}</span>
+                                      </div>
+                                      <ul className="list-disc ml-4 space-y-0.5 text-zinc-700">
+                                        {exp.description.split('. ').filter(b => b.trim().length > 0).map((bullet, idx) => (
+                                          <li key={idx} className="pl-1 leading-snug">{bullet}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  ))}
+                                </div>
+                              </section>
+                            );
+                          }
+
+                          if (sectionId === 'projects' && projects.length > 0) {
+                            return (
+                              <section key={sectionId}>
+                                <h2 className="font-bold border-b border-zinc-300 pb-0.5 mb-3 uppercase text-[9px] tracking-[0.2em] text-zinc-500">Key Projects & Initiatives</h2>
+                                <div className="space-y-3">
+                                  {projects.map(proj => (
+                                    <div key={proj.id}>
+                                      <div className="flex justify-between items-baseline mb-0.5">
+                                        <h3 className="font-bold text-zinc-900 text-[12px] uppercase tracking-tight">
+                                          {proj.title}
+                                        </h3>
+                                        {proj.tech && <span className="text-[8px] font-mono text-zinc-400 bg-zinc-50 px-1.5 rounded border border-zinc-100">{proj.tech}</span>}
+                                      </div>
+                                      <ul className="list-disc ml-4 space-y-0.5 text-zinc-700">
+                                        {proj.description.split('. ').filter(b => b.trim().length > 0).map((bullet, idx) => (
+                                          <li key={idx} className="pl-1 leading-snug">{bullet}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  ))}
+                                </div>
+                              </section>
+                            );
+                          }
+
+                          if (sectionId === 'education' && education.length > 0) {
+                            return (
+                              <section key={sectionId}>
+                                <h2 className="font-bold border-b border-zinc-300 pb-0.5 mb-2 uppercase text-[9px] tracking-[0.2em] text-zinc-500">Education</h2>
+                                <div className="space-y-3">
+                                  {education.map(edu => (
+                                    <div key={edu.id} className="flex justify-between items-baseline">
+                                      <div className="flex flex-col">
+                                        <span className="font-bold text-zinc-900 text-[12px]">{edu.degree}</span>
+                                        <div className="flex items-baseline gap-2">
+                                          <span className="text-zinc-500 italic text-[10px]">{edu.school}</span>
+                                          {edu.percentage && (
+                                            <span className="text-[9px] font-bold text-zinc-900 border-l border-zinc-200 pl-2 ml-1">Grade: {edu.percentage}</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <span className="text-[8px] text-zinc-400 font-mono mt-0.5 uppercase tracking-widest">{edu.year}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </section>
+                            );
+                          }
+
+                          if (sectionId === 'certifications' && (certificates || []).length > 0 && certificates[0]) {
+                            return (
+                              <section key={sectionId}>
+                                <h2 className="font-bold border-b border-zinc-300 pb-0.5 mb-2 uppercase text-[9px] tracking-[0.2em] text-zinc-500">Certifications</h2>
+                                <ul className="space-y-1">
+                                  {certificates.map((cert, idx) => cert ? (
+                                    <li key={idx} className="text-zinc-700 flex items-start gap-2">
+                                      <span className="text-zinc-300 font-bold">•</span>
+                                      {cert}
+                                    </li>
+                                  ) : null)}
+                                </ul>
+                              </section>
+                            );
+                          }
+
+                          if (sectionId === 'custom' && customSections.length > 0) {
+                            return customSections.map(cs => cs.title && cs.content ? (
+                              <section key={cs.id}>
+                                <h2 className="font-bold border-b border-zinc-300 pb-0.5 mb-2 uppercase text-[9px] tracking-[0.2em] text-zinc-500">{cs.title}</h2>
+                                <p className="text-zinc-700 leading-relaxed whitespace-pre-wrap">{cs.content}</p>
+                              </section>
+                            ) : null);
+                          }
+
+                          return null;
+                        })}
                         </div>
                       </div>
                     ) : selectedTemplate === 'minimal' ? (
@@ -2004,9 +2615,14 @@ export default function App() {
                         <section className="space-y-2">
                           <h2 className="text-xs font-bold uppercase tracking-widest text-zinc-400 border-b pb-1">Education</h2>
                           {education.map(edu => (
-                            <div key={edu.id} className="flex justify-between text-sm">
-                              <span><strong>{edu.degree}</strong>, {edu.school}</span>
-                              <span className="text-zinc-400 font-mono text-xs">{edu.year}</span>
+                            <div key={edu.id} className="flex flex-col space-y-0.5">
+                              <div className="flex justify-between text-sm">
+                                <span><strong>{edu.degree}</strong>, {edu.school}</span>
+                                <span className="text-zinc-400 font-mono text-xs">{edu.year}</span>
+                              </div>
+                              {edu.percentage && (
+                                <span className="text-[10px] text-zinc-500 font-medium">Grade: {edu.percentage}</span>
+                              )}
                             </div>
                           ))}
                         </section>
@@ -2164,26 +2780,36 @@ export default function App() {
                       </>
                     )}
                   </div>
+                </div>
 
-                  {isValidResume && (
-                    <div id="actionButtons" className="flex gap-4 mt-8 p-[25px] pt-0 print:hidden">
+                {/* Visual Height Indicator for A4 */}
+                <div className="max-w-[210mm] mx-auto mt-4 px-4 py-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/20 rounded-xl flex items-center gap-3">
+                  <AlertCircle size={14} className="text-amber-500" />
+                  <p className="text-[10px] text-amber-700 dark:text-amber-400 font-medium uppercase tracking-wider">
+                    Content is locked to a single A4 page. Adjust text length in "Edit" tab to fit perfectly.
+                  </p>
+                </div>
+
+                {isValidResume && (
+                    <div id="actionButtons" className="flex flex-wrap justify-center gap-4 mt-8 p-[25px] pt-0 pb-12 print:hidden max-w-4xl mx-auto">
                       <button 
                         onClick={() => setActiveTab('edit')}
-                        className="flex-1 py-3 border border-[#1A1A1A] text-[#1A1A1A] rounded-xl font-bold uppercase text-[10px] tracking-widest hover:bg-[#1A1A1A] hover:text-white transition-all flex items-center justify-center gap-2"
+                        className="flex-1 min-w-[160px] max-w-[240px] py-4 border border-zinc-200 text-zinc-600 rounded-2xl font-bold uppercase text-[10px] tracking-widest hover:bg-zinc-50 transition-all flex items-center justify-center gap-2 shadow-sm"
                       >
                         <ChevronLeft size={14} />
                         Back to Edit
                       </button>
                       <button 
-                        onClick={exportToPDF}
-                        className="flex-1 py-3 bg-[#1A1A1A] text-white rounded-xl font-bold uppercase text-[10px] tracking-widest hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                        type="button"
+                        onClick={downloadPDF}
+                        className="flex-1 min-w-[200px] max-w-[280px] py-4 bg-[#1A1A1A] text-white rounded-2xl font-bold uppercase text-[10px] tracking-widest hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3 shadow-xl"
                       >
-                        <Download size={14} />
+                        <Download size={16} />
                         Download PDF
                       </button>
                       <button 
                         onClick={downloadSimplePDF}
-                        className="flex-1 py-3 border border-[#1A1A1A] text-[#1A1A1A] rounded-xl font-bold uppercase text-[10px] tracking-widest hover:bg-[#1A1A1A] hover:text-white transition-all flex items-center justify-center gap-2"
+                        className="flex-1 min-w-[160px] max-w-[240px] py-4 border border-zinc-200 text-zinc-600 rounded-2xl font-bold uppercase text-[10px] tracking-widest hover:bg-zinc-50 transition-all flex items-center justify-center gap-2 shadow-sm"
                       >
                         <FileText size={14} />
                         Simple PDF
@@ -2353,7 +2979,8 @@ export default function App() {
                       <p className="text-sm text-white/60 leading-relaxed max-w-md">Our AI has identified these roles as the best fit for your current skill set and experience level. You can export your resume now to start applying.</p>
                     </div>
                     <button 
-                      onClick={exportToPDF}
+                      type="button"
+                      onClick={downloadPDF}
                       className="px-12 py-5 bg-white text-[#1A1A1A] rounded-full font-bold uppercase text-xs tracking-widest hover:scale-105 transition-all flex items-center gap-3"
                     >
                       <Download size={18} />
